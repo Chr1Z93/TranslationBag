@@ -41,7 +41,7 @@ output_folder = (
 max_sheet_count = 99
 
 # probably don't need to change these
-bag_template = "TranslationBagTemplate.json"
+bag_template = "TTSBagTemplate.json"
 arkhamdb_url = "https://" + language_key.lower() + ".arkhamdb.com/api/public/card/"
 script_dir = os.path.dirname(__file__)
 
@@ -284,7 +284,7 @@ for deck_id, data in sheet_parameters.items():
     sheet_name = online_name + ".jpg"
 
     print("Creating " + sheet_name)
-    sheetPath = create_decksheet(
+    sheet_path = create_decksheet(
         data["img_path_list"],
         grid_size,
         img_w,
@@ -292,7 +292,7 @@ for deck_id, data in sheet_parameters.items():
         temp_path + "/" + sheet_name,
     )
 
-    data["uploaded_url"] = upload_file(online_name, sheetPath)
+    data["uploaded_url"] = upload_file(online_name, sheet_path)
     data["grid_size"] = grid_size
 
     if deck_id >= max_sheet_count:
@@ -304,14 +304,14 @@ bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
 bag["ObjectStates"][0]["ContainedObjects"] = []
-bag["LuaScript"] = escape_lua_file("TranslationBagLuaScript.lua")
+bag["LuaScript"] = escape_lua_file("TTSBagLuaScript.lua")
 
 # loop cards and add them to bag
 print("Creating output file.")
 for id, data in card_index.items():
-    cardJson = get_card_json(id, data)
-    if cardJson != "ERROR":
-        bag["ObjectStates"][0]["ContainedObjects"].append(cardJson)
+    card_json = get_card_json(id, data)
+    if card_json != "ERROR":
+        bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
 
 # output the bag with translated cards
 bag_path = output_folder + "/" + bag_name + ".json"
