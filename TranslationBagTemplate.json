@@ -1,0 +1,124 @@
+{
+  "SaveName": "",
+  "Date": "",
+  "VersionNumber": "",
+  "GameMode": "",
+  "GameType": "",
+  "GameComplexity": "",
+  "Tags": [],
+  "Gravity": 0.5,
+  "PlayArea": 0.5,
+  "Table": "",
+  "Sky": "",
+  "Note": "",
+  "TabStates": {},
+  "LuaScript": "",
+  "LuaScriptState": "",
+  "XmlUI": "",
+  "ObjectStates": [
+    {
+      "Name": "Bag",
+      "Transform": {
+        "posX": 0,
+        "posY": 0,
+        "posZ": 0,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "scaleZ": 1
+      },
+      "Nickname": "Translation Bag - Template",
+      "Description": "Requires Arkham Horror LCG SCE 3.9.0+  !",
+      "AltLookAngle": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "ColorDiffuse": {
+        "r": 0.7,
+        "g": 0.35,
+        "b": 0
+      },
+      "LayoutGroupSortIndex": 0,
+      "Value": 0,
+      "Locked": false,
+      "Grid": true,
+      "Snap": true,
+      "IgnoreFoW": false,
+      "MeasureMovement": false,
+      "DragSelectable": true,
+      "Autoraise": true,
+      "Sticky": true,
+      "Tooltip": true,
+      "GridProjection": false,
+      "HideWhenFaceDown": false,
+      "Hands": false,
+      "MaterialIndex": -1,
+      "MeshIndex": -1,
+      "Bag": {
+        "Order": 0
+      },
+      "LuaScript": "function onLoad()\r\n  self.addContextMenuItem(\"Get metadata\", getMetadata)\r\n  self.addContextMenuItem(\"Add to index\", addToIndex)\r\nend\r\n\r\nfunction getMetadata()\r\n  local bag = getObjectFromGUID(\"15bb07\")\r\n  if not bag then\r\n    printToAll(\"Couldn't find AllCardsBag!\")\r\n    return\r\n  end\r\n\r\n  if self.hasTag(\"AllCardsHotfix\") then\r\n    printToAll(\"Metadata was already updated!\")\r\n    return\r\n  end\r\n\r\n  self.addTag(\"AllCardsHotfix\")\r\n  local data = self.getData()\r\n  for _, objData in ipairs(data[\"ContainedObjects\"] or {}) do\r\n    local cardData = bag.call(\"getCardById\", { id = objData[\"GMNotes\"] })\r\n    objData[\"GMNotes\"] = JSON.encode(cardData.metadata)\r\n  end\r\n\r\n  printToAll(\"Successfully loaded metadata.\")\r\n  self.destruct()\r\n  spawnObjectData({ data = data })\r\nend\r\n\r\nfunction addToIndex()\r\n  local bag = getObjectFromGUID(\"15bb07\")\r\n  if not bag then\r\n    printToAll(\"Couldn't find AllCardsBag!\")\r\n    return\r\n  end\r\n\r\n  printToAll(\"Updating index.\")\r\n  bag.call(\"rebuildIndexForHotfix\")\r\nend",
+      "ContainedObjects": [
+        {
+          "Name": "Card",
+          "Transform": {
+            "posX": 0,
+            "posY": 0,
+            "posZ": 0,
+            "rotX": 0,
+            "rotY": 270,
+            "rotZ": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "scaleZ": 1
+          },
+          "Nickname": "CardName",
+          "Description": "",
+          "AltLookAngle": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "ColorDiffuse": {
+            "r": 0.7,
+            "g": 0.7,
+            "b": 0.7
+          },
+          "Tags": [
+            "PlayerCard"
+          ],
+          "LayoutGroupSortIndex": 0,
+          "Value": 0,
+          "Locked": false,
+          "Grid": true,
+          "Snap": true,
+          "IgnoreFoW": false,
+          "MeasureMovement": false,
+          "DragSelectable": true,
+          "Autoraise": true,
+          "Sticky": true,
+          "Tooltip": true,
+          "GridProjection": false,
+          "HideWhenFaceDown": true,
+          "Hands": true,
+          "CardID": 12300,
+          "SidewaysCard": false,
+          "CustomDeck": {
+            "123": {
+              "FaceURL": "",
+              "BackURL": "http://cloud-3.steamusercontent.com/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/",
+              "NumWidth": 1,
+              "NumHeight": 1,
+              "BackIsHidden": true,
+              "UniqueBack": false,
+              "Type": 0
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
