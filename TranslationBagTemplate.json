@@ -60,7 +60,6 @@
       "Bag": {
         "Order": 0
       },
-      "LuaScript": "function onLoad()\r\n  self.addContextMenuItem(\"Get metadata\", getMetadata)\r\n  self.addContextMenuItem(\"Add to index\", addToIndex)\r\nend\r\n\r\nfunction getMetadata()\r\n  local bag = getObjectFromGUID(\"15bb07\")\r\n  if not bag then\r\n    printToAll(\"Couldn't find AllCardsBag!\")\r\n    return\r\n  end\r\n\r\n  if self.hasTag(\"AllCardsHotfix\") then\r\n    printToAll(\"Metadata was already updated!\")\r\n    return\r\n  end\r\n\r\n  self.addTag(\"AllCardsHotfix\")\r\n  local data = self.getData()\r\n  for _, objData in ipairs(data[\"ContainedObjects\"] or {}) do\r\n    local cardData = bag.call(\"getCardById\", { id = objData[\"GMNotes\"] })\r\n    objData[\"GMNotes\"] = JSON.encode(cardData.metadata)\r\n  end\r\n\r\n  printToAll(\"Successfully loaded metadata.\")\r\n  self.destruct()\r\n  spawnObjectData({ data = data })\r\nend\r\n\r\nfunction addToIndex()\r\n  local bag = getObjectFromGUID(\"15bb07\")\r\n  if not bag then\r\n    printToAll(\"Couldn't find AllCardsBag!\")\r\n    return\r\n  end\r\n\r\n  printToAll(\"Updating index.\")\r\n  bag.call(\"rebuildIndexForHotfix\")\r\nend",
       "ContainedObjects": [
         {
           "Name": "Card",
