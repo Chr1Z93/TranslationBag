@@ -1,0 +1,64 @@
+[project]
+name = "TranslationBag"
+requires-python = ">=3.12"
+version = "0.1.0"
+description = "Automated script for translating and creating decks of cards for Tabletop Simulator using ArkhamDB data and Cloudinary for image storage."
+
+[tool.poetry]
+name = "TranslationBag"
+version = "0.1.0"
+description = ""
+authors = []
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pillow = "^10.3.0"
+nicegui = "^1.4.26"
+cloudinary = "^1.40.0"
+gql = { extras = ["all"], version = "^3.5.0" }
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff.lint]
+select = ["A", "B", "C", "E", "EM", "W", "F", "N", "ANN", "ASYNC", "S", "BLE", "FBT", "DTZ", "ISC", "ICN", "PIE", "PYI", "Q", "RSE", "RET", "SLOT", "TCH", "PTH", "LOG", "RUF", "C4", "ISC", "UP", "RUF", "SIM", "I", "COM", "EXE", "ISC", "ICN", "LOG", "G", "INP", "PIE", "PYI", "PT", "RSE", "RET", "SLF", "SLOT", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "TD", "FIX", "ERA", "R", "W", "TRY", "FLY", "PERF", "FURB"]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+#fix = true
+#unsafe-fixes = true
+#lint.extend-fixable = ["B"]
+#lint.preview = true
+#lint.ignore = ["ISC001"]
+# Enumerate all fixed violations.
+#show-fixes = true
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = [
+    # Allow Pydantic's `@validator` decorator to trigger class method treatment.
+    "pydantic.validator",
+]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ruff]
+cache-dir = ".cache/ruff"
+
+line-length = 100
+
+# Assume Python 3.12
+target-version = "py312"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.pyright]
+# ...
+venvPath = "."
+venv = ".venv"
