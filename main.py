@@ -42,16 +42,15 @@ cloudinary.config(
 # keep track of the deckIds that the missing URL was reported for
 reported_missing_url = {}
 
-
-# opens a JSON file in the script_dir
 def load_json_file(file_name):
+    """Opens a JSON file in the script_dir"""
     file_path = os.path.join(script_dir, file_name)
     with open(file_path) as file:
         return json.load(file)
 
 
-# create card json
 def get_card_json(adb_id, data):
+    """Create a JSON object for a card"""
     if "uploaded_url" not in sheet_parameters[int(data["deck_id"])]:
         if reported_missing_url.get(data["deck_id"], False):
             print(f"Didn't find URL for sheet {data["deck_id"]}")
@@ -77,27 +76,27 @@ def get_card_json(adb_id, data):
     return new_card
 
 
-# constructs the ArkhamDB ID
+
 def get_arkhamdb_id(folder_name, file_name):
+    """Constructs the ArkhamDB ID"""
     # if filename isn't already a full adb_id, construct it
     if len(file_name) < 5:
         zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
         if zero_count < 0:
             print(f"Error getting ID for {os.path.join(subdir, file)}")
             return "ERROR"
-        else:
-            return f"{folder_name}{'0'*zero_count}{file_name}"
-    else:
-        return file_name
+        return f"{folder_name}{'0'*zero_count}{file_name}"
+    return file_name
 
 
-# only get numbers from string
 def extract_numbers(string):
+    """Removes all non-number characters from a string"""
     numbers = re.findall(r"\d+", string)
     return "".join(numbers)
 
 
 def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
+    """Stitches the provided images together to deck sheet"""
     rows, cols = grid_size
 
     # Create a blank canvas for the grid
@@ -129,25 +128,26 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
 
 
 def upload_file(online_name, file_path):
-    # check if file is already uploaded
+    """Uploads a file if it isn't already uploaded"""
+    
+    # Check if file is already uploaded
     result = cloudinary.Search().expression(online_name).max_results("1").execute()
-
     if result["total_count"] == 1:
         print(f"Found file online: {online_name}")
         return result["resources"][0]["secure_url"]
-    else:
-        # upload file
-        print(f"Uploading file: {online_name}")
-        result = cloudinary.uploader.upload(
-            file_path,
-            folder=f"AH LCG - {cfg["locale"].upper()}",
-            public_id=online_name,
-        )
-        return result["secure_url"]
+    
+    # Upload file
+    print(f"Uploading file: {online_name}")
+    result = cloudinary.uploader.upload(
+        file_path,
+        folder=f"AH LCG - {cfg["locale"].upper()}",
+        public_id=online_name,
+    )
+    return result["secure_url"]
 
 
-# gets the translated card name from ArkhamDB
 def get_translated_name(adb_id):
+    """Get the translated card name from ArkhamDB"""
     try:
         response = urlopen(arkhamdb_url + adb_id)
         data_json = json.loads(response.read())
@@ -161,6 +161,7 @@ def get_translated_name(adb_id):
 
 
 def escape_lua_file(file_path):
+    """Escapes the script from a Lua file to be included in JSON"""
     try:
         with open(file_path) as file:
             lua_str = file.read()
