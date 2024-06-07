@@ -1,0 +1,15 @@
+{
+    "img_max_byte": 10485760,
+    "img_count_per_sheet": 30,
+    "img_quality": 100,
+    "img_quality_reduce": 2,
+    "img_w": 750,
+    "img_h": 1050,
+    "cloud_name": "8",
+    "api_key": "7",
+    "api_secret": "6",
+    "locale": "de",
+    "source_folder": "C:\\Users\\pulsc\\Downloads\\Spielerkarten\\Nach Zyklus",
+    "keep_temp_folder": true,
+    "max_sheet_count": 1
+}
