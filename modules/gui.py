@@ -6,6 +6,7 @@ import os
 
 class App:
     def __init__(self):
+        """Initializes the UI by creating the elements"""
         self.cfg = {}
         self.root = tk.Tk()
         self.root.protocol("WM_DELETE_WINDOW", self.close_app)
@@ -54,16 +55,14 @@ class App:
                 "Image Count per Sheet",
                 10,
                 70,
-                self.update_count_per_sheet_label,
+                self.update_label,
+                "10",
+                10,
             )
         )
 
         self.img_quality_slider, self.quality_value_label = self.create_slider(
-            len(self.fields) + 3,
-            "Image Quality",
-            1,
-            100,
-            self.update_quality_label,
+            len(self.fields) + 3, "Image Quality", 1, 100, self.update_label, "90"
         )
 
         self.img_quality_reduce_slider, self.quality_reduce_value_label = (
@@ -72,7 +71,8 @@ class App:
                 "Image Quality Reduce",
                 1,
                 10,
-                self.update_quality_reduce_label,
+                self.update_label,
+                "2",
             )
         )
 
@@ -83,7 +83,8 @@ class App:
         self.load_settings()
         self.start_app()
 
-    def create_slider(self, row, text, from_, to, command):
+    def create_slider(self, row, text, from_, to, command, label_text, step=1):
+        """Helper function to create sliders with a value label"""
         ttk.Label(self.root, text=text).grid(
             row=row, column=0, padx=10, pady=5, sticky=tk.E
         )
@@ -93,64 +94,74 @@ class App:
             to=to,
             orient=tk.HORIZONTAL,
             length=135,
-            command=command,
         )
         slider.grid(row=row, column=1, padx=10, pady=5)
-        label = ttk.Label(self.root)
+        label = ttk.Label(self.root, text=label_text)
         label.grid(row=row, column=2, padx=10, pady=5)
+        slider["command"] = lambda value: command(label, value, step)
         return slider, label
 
     def close_app(self):
+        """Run when the window is closed"""
         exit()
 
     def load_settings(self):
-        if os.path.exists("config.json"):
-            with open("config.json", "r") as f:
-                self.cfg.update(json.load(f))
-            for _, var_name in self.fields:
-                self.entries[var_name].insert(0, self.cfg.get(var_name, ""))
+        """Loads settings from the config file"""
+        if not os.path.exists("config.json"):
+            return
 
-            self.source_folder_entry.insert(0, self.cfg.get("source_folder", ""))
-            self.img_quality_slider.set(self.cfg.get("img_quality", 90))
-            self.img_quality_reduce_slider.set(self.cfg.get("img_quality_reduce", 2))
-            self.img_count_per_sheet_slider.set(self.cfg.get("img_count_per_sheet", 30))
+        with open("config.json", "r") as f:
+            self.cfg.update(json.load(f))
+        for _, var_name in self.fields:
+            self.entries[var_name].insert(0, self.cfg.get(var_name, ""))
 
-    def save_settings(self):
-        with open("config.json", "w") as f:
-            json.dump(self.cfg, f, indent=4)
-        print("Settings have been saved to config.json")
+        # load settings for source folder
+        self.source_folder_entry.insert(0, self.cfg.get("source_folder", ""))
+
+        # load settings for sliders and labels
+        self.img_count_per_sheet_slider.set(self.cfg.get("img_count_per_sheet", 30))
+        self.update_label(
+            self.count_per_sheet_label, self.cfg.get("img_count_per_sheet", 30), 10
+        )
+        self.img_quality_slider.set(self.cfg.get("img_quality", 90))
+        self.update_label(self.quality_value_label, self.cfg.get("img_quality", 90))
+        self.img_quality_reduce_slider.set(self.cfg.get("img_quality_reduce", 2))
+        self.update_label(
+            self.quality_reduce_value_label, self.cfg.get("img_quality_reduce", 2)
+        )
 
     def submit(self):
+        """Reads the form and saves settings to config file before continuing"""
         try:
+            # get values from input fields
             for _, var_name in self.fields:
                 self.cfg[var_name] = int(self.entries[var_name].get())
 
+            # get values from sliders
             self.cfg["img_quality"] = self.img_quality_slider.get()
             self.cfg["img_quality_reduce"] = self.img_quality_reduce_slider.get()
             self.cfg["img_count_per_sheet"] = int(self.img_count_per_sheet_slider.get())
 
-            self.save_settings()
-            messagebox.showinfo("Success", "Settings have been saved.")
+            # save settings
+            with open("config.json", "w") as f:
+                json.dump(self.cfg, f, indent=4)
         except ValueError:
             messagebox.showerror("Invalid input", "All fields are mandatory.")
 
     def browse_source_folder(self):
+        """Helper function for the browse button of the source-folder field"""
         folder_selected = filedialog.askdirectory()
         if folder_selected:
             self.source_folder_entry.delete(0, tk.END)
             self.source_folder_entry.insert(0, folder_selected)
 
-    def update_quality_label(self, value):
-        self.quality_value_label.config(text=str(int(round(float(value)))))
-
-    def update_quality_reduce_label(self, value):
-        self.quality_reduce_value_label.config(text=str(int(round(float(value)))))
-
-    def update_count_per_sheet_label(self, value):
-        rounded_value = round(float(value) / 10) * 10
-        self.count_per_sheet_label.config(text=str(rounded_value))
+    def update_label(self, label, value, step=1):
+        """Helper function to update the label of a slider to its value"""
+        rounded_value = round(float(value) / step) * step
+        label.config(text=str(int(rounded_value)))
 
     def start_app(self):
+        """Create a window that fits all elements in the center of screen"""
         self.root.update()
         w_width = self.root.winfo_width()
         w_height = self.root.winfo_height()
@@ -158,11 +169,12 @@ class App:
         s_height = self.root.winfo_screenheight()
         x = int((s_width / 2) - (w_width / 2))
         y = int((s_height / 2) - (w_height / 2))
+
         self.root.geometry(f"{w_width}x{w_height}+{x}+{y}")
         self.root.resizable(False, False)
-
         self.root.title("Translation Bag")
         self.root.mainloop()
 
     def get_values(self):
+        """Helper function to get the config values"""
         return self.cfg
