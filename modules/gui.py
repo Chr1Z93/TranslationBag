@@ -65,17 +65,6 @@ class App:
             len(self.fields) + 3, "Image Quality", 1, 100, self.update_label, "90"
         )
 
-        self.img_quality_reduce_slider, self.quality_reduce_value_label = (
-            self.create_slider(
-                len(self.fields) + 4,
-                "Image Quality Reduce",
-                1,
-                10,
-                self.update_label,
-                "2",
-            )
-        )
-
         # Submit button
         self.submit_button = ttk.Button(self.root, text="Submit", command=self.submit)
         self.submit_button.grid(row=len(self.fields) + 5, columnspan=3, pady=10)
@@ -125,10 +114,6 @@ class App:
         )
         self.img_quality_slider.set(self.cfg.get("img_quality", 90))
         self.update_label(self.quality_value_label, self.cfg.get("img_quality", 90))
-        self.img_quality_reduce_slider.set(self.cfg.get("img_quality_reduce", 2))
-        self.update_label(
-            self.quality_reduce_value_label, self.cfg.get("img_quality_reduce", 2)
-        )
 
     def submit(self):
         """Reads the form and saves settings to config file before continuing"""
@@ -139,7 +124,6 @@ class App:
 
             # get values from sliders
             self.cfg["img_quality"] = self.img_quality_slider.get()
-            self.cfg["img_quality_reduce"] = self.img_quality_reduce_slider.get()
             self.cfg["img_count_per_sheet"] = int(self.img_count_per_sheet_slider.get())
 
             # save settings

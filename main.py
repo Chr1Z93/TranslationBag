@@ -23,9 +23,13 @@ form = App()
 cfg = form.get_values()
 
 # use TTS' saved objects folder as default output folder
-output_folder = (
-    os.environ["USERPROFILE"]
-    + r"\Documents\My Games\Tabletop Simulator\Saves\Saved Objects"
+output_folder = os.path.join(
+    os.environ["USERPROFILE"],
+    "Documents",
+    "My Games",
+    "Tabletop Simulator",
+    "Saves",
+    "Saved Objects"
 )
 
 # probably don't need to change these
@@ -42,6 +46,7 @@ cloudinary.config(
 # keep track of the deckIds that the missing URL was reported for
 reported_missing_url = {}
 
+
 def load_json_file(file_name):
     """Opens a JSON file in the script_dir"""
     file_path = os.path.join(script_dir, file_name)
@@ -51,30 +56,38 @@ def load_json_file(file_name):
 
 def get_card_json(adb_id, data):
     """Create a JSON object for a card"""
-    if "uploaded_url" not in sheet_parameters[int(data["deck_id"])]:
-        if reported_missing_url.get(data["deck_id"], False):
-            print(f"Didn't find URL for sheet {data["deck_id"]}")
-            reported_missing_url[data["deck_id"]] = True
-        return "ERROR"
-
+    deck_id = data["deck_id"]
+    sheet_param = sheet_parameters[int(data["deck_id"])]
+    
+    # Check if 'uploaded_url' exists in sheet_parameters
+    if "uploaded_url" not in sheet_param:
+        if reported_missing_url.get(deck_id, False):
+            print(f"Didn't find URL for sheet {deck_id}")
+            reported_missing_url[deck_id] = True
+        raise ValueError("uploaded_url not found in sheet_parameters")
+    
     # collect data for card
     translated_name = get_translated_name(adb_id)
-    uploaded_url = sheet_parameters[int(data["deck_id"])]["uploaded_url"]
-    h, w = sheet_parameters[int(data["deck_id"])]["grid_size"]
+    uploaded_url = sheet_param["uploaded_url"]
+    h, w = sheet_param["grid_size"]
 
     # create Json element
     new_card = copy.deepcopy(card_template)
     back_url = new_card["CustomDeck"]["123"]["BackURL"]
+    new_card["GMNotes"] = adb_id
     new_card["Nickname"] = translated_name
     new_card["CardID"] = data["card_id"]
-    new_card["CustomDeck"][data["deck_id"]] = new_card["CustomDeck"].pop("123")
-    new_card["CustomDeck"][data["deck_id"]]["FaceURL"] = uploaded_url
-    new_card["CustomDeck"][data["deck_id"]]["BackURL"] = back_url
-    new_card["CustomDeck"][data["deck_id"]]["NumWidth"] = w
-    new_card["CustomDeck"][data["deck_id"]]["NumHeight"] = h
-    new_card["GMNotes"] = adb_id
+    new_card["CustomDeck"][deck_id] = new_card["CustomDeck"].pop("123")
+    new_card["CustomDeck"][deck_id].update({
+        "FaceURL": uploaded_url,
+        "BackURL": back_url,
+        "NumWidth": w,
+        "NumHeight": h,
+        "BackIsHidden": True,
+        "UniqueBack": False,
+        "Type": 0
+    })
     return new_card
-
 
 
 def get_arkhamdb_id(folder_name, file_name):
@@ -104,54 +117,70 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
 
     # Paste each image onto the canvas
     for index, img_path in enumerate(img_path_list):
-        img = Image.open(img_path)
-        img = img.resize((img_w, img_h))
-        row = index // cols
-        col = index % cols
-        position = (col * img_w, row * img_h)
-        grid_image.paste(img, position)
+        try:
+            with Image.open(img_path) as img:
+                img = img.resize((img_w, img_h))
+                row = index // cols
+                col = index % cols
+                position = (col * img_w, row * img_h)
+                grid_image.paste(img, position)
+        except IOError:
+            print(f"Error opening image {img_path}")
+            continue
 
     # Save the final grid image with initial quality cfg
     quality = cfg["img_quality"]
-    grid_image.save(output_path, quality=quality, cfgimize=True)
+    grid_image.save(output_path, quality=quality, optimize=True)
 
     # Check the file size
     file_size = os.path.getsize(output_path)
 
     # Adjust quality until the file size is within the limit
     while file_size > cfg["img_max_byte"] and quality > cfg["img_quality_reduce"]:
-        quality -= cfg["img_quality_reduce"]
+        reduction_ratio = cfg["img_max_byte"] / file_size
+        quality = int(quality * reduction_ratio)
         print(f"File too big ({file_size} B). Running again with quality = {quality} %")
-        grid_image.save(output_path, quality=quality, cfgimize=True)
+        try:
+            grid_image.save(output_path, quality=quality, optimize=True)
+        except IOError:
+            print("Error saving image")
+            return None
         file_size = os.path.getsize(output_path)
     return output_path
 
 
+def file_exists(online_name):
+    """Checks if a file already exists online."""
+    try:
+        result = cloudinary.Search().expression(online_name).max_results("1").execute()
+        return result["total_count"] == 1
+    except Exception as e:
+        print(f"Error when checking if file exists: {e}")
+        return False
+
 def upload_file(online_name, file_path):
-    """Uploads a file if it isn't already uploaded"""
+    """Uploads a file if it isn't already uploaded."""
     
-    # Check if file is already uploaded
-    result = cloudinary.Search().expression(online_name).max_results("1").execute()
-    if result["total_count"] == 1:
+    if file_exists(online_name):
         print(f"Found file online: {online_name}")
         return result["resources"][0]["secure_url"]
-    
-    # Upload file
+
     print(f"Uploading file: {online_name}")
-    result = cloudinary.uploader.upload(
-        file_path,
-        folder=f"AH LCG - {cfg["locale"].upper()}",
-        public_id=online_name,
-    )
-    return result["secure_url"]
+    try:
+        result = cloudinary.uploader.upload(
+            file_path,
+            folder=f"AH LCG - {cfg['locale'].upper()}",
+            public_id=online_name,
+        )
+        return result["secure_url"]
+    except Exception as e:
+        print(f"Error when uploading file: {e}")
 
 
 def get_translated_name(adb_id):
     """Get the translated card name from ArkhamDB"""
     try:
         response = urlopen(arkhamdb_url + adb_id)
-        data_json = json.loads(response.read())
-        return data_json["name"]
     except HTTPError as e:
         print(f"Couldn't get translated name for ID: {adb_id} (HTTP {e.code})")
         return adb_id
@@ -159,34 +188,30 @@ def get_translated_name(adb_id):
         print(f"Couldn't get translated name for ID: {adb_id} (URL {e.reason})")
         return adb_id
 
+    try:
+        data_json = json.loads(response.read())
+    except json.JSONDecodeError:
+        print(f"Couldn't parse JSON for ID: {adb_id}")
+        return adb_id
+
+    try:
+        return data_json["name"]
+    except KeyError:
+        print(f"JSON for ID: {adb_id} did not contain 'name' key")
+        return adb_id
+
 
 def escape_lua_file(file_path):
-    """Escapes the script from a Lua file to be included in JSON"""
+    """Escapes the script from a Lua file to be included in JSON."""
     try:
-        with open(file_path) as file:
+        with open(file_path, 'r') as file:
             lua_str = file.read()
-    except FileNotFoundError:
-        return "File not found"
-    except OSError:
-        return "Error reading file"
+    except (FileNotFoundError, OSError) as e:
+        return str(e)
 
-    def escape_special_chars(match):
-        char = match.group(0)
-        if char == "\\":
-            return "\\\\"
-        elif char == '"':
-            return '\\"'
-        elif char == "'":
-            return "\\'"
-        elif char == "\n":
-            return "\\n"
-        elif char == "\t":
-            return "\\t"
-        else:
-            return char
-
-    escaped_str = re.sub(r"[\\\"\']|\n|\t", escape_special_chars, lua_str)
-    return f'"{escaped_str}"'
+    # Python's built-in functions can handle all required escape sequences
+    escaped_str = json.dumps(lua_str)
+    return escaped_str
 
 
 # -----------------------------------------------------------
@@ -275,7 +300,7 @@ for deck_id, data in sheet_parameters.items():
         grid_size,
         cfg["img_w"],
         cfg["img_h"],
-        f"{temp_path}/{sheet_name}",
+        os.path.join(temp_path, sheet_name),
     )
 
     data["uploaded_url"] = upload_file(online_name, sheet_path)
@@ -300,7 +325,7 @@ for adb_id, data in card_index.items():
         bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
 
 # output the bag with translated cards
-bag_path = f"{output_folder}/{bag_name}.json"
+bag_path = os.path.join(output_folder, f"{bag_name}.json")
 with open(bag_path, "w", encoding="utf8") as f:
     json.dump(bag, f, ensure_ascii=False, indent=2)
 print("Successfully created output file.")
