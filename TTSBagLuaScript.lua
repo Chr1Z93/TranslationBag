@@ -30,6 +30,10 @@ function getMetadata()
 
     -- copy the secondary metadata: Tags
     objData["Tags"] = cardData.data["Tags"]
+
+    -- copy script and XML
+    objData["LuaScript"] = cardData.data["LuaScript"]
+    objData["XmlUI"] = cardData.data["XmlUI"]
   end
 
   printToAll("Successfully loaded metadata.")
