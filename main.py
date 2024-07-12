@@ -92,8 +92,9 @@ def get_card_json(adb_id, data):
 
 def get_arkhamdb_id(folder_name, file_name):
     """Constructs the ArkhamDB ID"""
-    # if filename isn't already a full adb_id, construct it
+    # assume that file names with at least 4 digits are valid ArkhamDB IDs
     if len(file_name) < 5:
+        # if filename isn't already a full adb_id, construct it from folder name + file name
         zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
         if zero_count < 0:
             print(f"Error getting ID for {os.path.join(subdir, file)}")
@@ -210,8 +211,7 @@ def escape_lua_file(file_path):
         return str(e)
 
     # Python's built-in functions can handle all required escape sequences
-    escaped_str = json.dumps(lua_str)
-    return escaped_str
+    return json.dumps(lua_str)
 
 
 # -----------------------------------------------------------
@@ -230,25 +230,44 @@ for subdir, dirs, files in os.walk(cfg["source_folder"]):
         # skip this file because we don't have a proper ArkhamDB ID for it
         if adb_id == "ERROR":
             continue
-
-        # get number to sort cards by (suffix for letter appendices)
-        sort_value = extract_numbers(adb_id) + str(len(adb_id) - 5)
+        
+        # check if a face for this card is already added to the index and mark it as double-sided
+        numbers = extract_numbers(adb_id)
+        double_sided = False
+        if numbers in card_index:
+            double_sided = True
+            card_index[numbers]["double_sided"] = True
 
         # add card to index
         card_index[adb_id] = {
             "cycle_id": int(adb_id[:2]),
             "file_path": os.path.join(subdir, file),
-            "sort_value": sort_value,
+            "double_sided": double_sided
         }
 
-# sort the card index
-card_index = dict(sorted(card_index.items(), key=lambda item: item[1]["sort_value"]))
+# sort the card index (numbers first, than by letter appendix)
+card_index = dict(sorted(card_index.items(), lambda x: (int(x[0][:-1] if x[0][-1].isalpha() else x[0]), x[0][-1] if x[0][-1].isalpha() else '')))
 
 # loop through index and collect data for decksheets
+single_sided_cards = []
+double_sided_cards = {"front": [], "back": []}
+
+# separate single-sided and double-sided cards
+for adb_id, data in card_index.items():
+    if data["double_sided"] == True:
+        if adb_id.endswith('b'):
+            double_sided_cards["back"].append((adb_id, data))
+        else:
+            double_sided_cards["front"].append((adb_id, data))
+    else:
+        single_sided_cards.append((adb_id, data))
+
+# process cards
 last_cycle_id, last_id, card_id, deck_id = 0, 0, 0, 0
 sheet_parameters = {}
 
-for adb_id, data in card_index.items():
+# process single-sided cards
+for adb_id, data in single_sided_cards:
     # we're just starting out or got to a new cycle or have to start a new sheet
     if (
         last_cycle_id == 0
@@ -278,8 +297,33 @@ for adb_id, data in card_index.items():
     # ensure the card_id field has two digit length
     data["card_id"] = f"{deck_id}{card_id:02}"
 
-# add end index for last item
-sheet_parameters[deck_id]["endId"] = last_id
+# add end index for last single-sided sheet
+if deck_id != 0:
+    sheet_parameters[deck_id]["endId"] = last_id
+    
+# process double-sided cards
+for side in ["front", "back"]:
+    deck_id += 1
+    card_id = 0
+    sheet_parameters[deck_id] = {"img_path_list": [], "startId": double_sided_cards[side][0][0]}
+    
+    for adb_id, data in double_sided_cards[side]:
+        if card_id == (cfg["img_count_per_sheet"] - 1):
+            # start a new sheet if the current one is full
+            sheet_parameters[deck_id]["endId"] = adb_id
+            deck_id += 1
+            card_id = 0
+            sheet_parameters[deck_id] = {"img_path_list": [], "startId": adb_id}
+        
+        sheet_parameters[deck_id]["img_path_list"].append(data["file_path"])
+        data["deck_id"] = f"{deck_id}"
+        data["card_id"] = f"{deck_id}{card_id:02}"
+        
+        card_id += 1
+        last_id = adb_id
+    
+    # add end index for last double-sided sheet
+    sheet_parameters[deck_id]["endId"] = last_id
 
 # create temp folder for decksheets
 temp_path = os.path.join(script_dir, "temp")
