@@ -57,7 +57,8 @@ def load_json_file(file_name):
 def get_card_json(adb_id, data):
     """Create a JSON object for a card"""
     deck_id = data["deck_id"]
-    sheet_param = sheet_parameters[int(data["deck_id"])]
+    card_id = data["card_id"]
+    sheet_param = sheet_parameters[deck_id]
     
     # Check if 'uploaded_url' exists in sheet_parameters
     if "uploaded_url" not in sheet_param:
@@ -66,33 +67,37 @@ def get_card_json(adb_id, data):
             reported_missing_url[deck_id] = True
         raise ValueError("uploaded_url not found in sheet_parameters")
     
-    # collect data for card
-    translated_name = get_translated_name(adb_id)
-    uploaded_url = sheet_param["uploaded_url"]
-    h, w = sheet_param["grid_size"]
-
     # create Json element
     new_card = copy.deepcopy(card_template)
-    back_url = new_card["CustomDeck"]["123"]["BackURL"]
+    
+    # collect data for card
+    translated_name = get_translated_name(adb_id)
+    face_url = sheet_param["uploaded_url"]
+    h, w = sheet_param["grid_size"]
+    
+    if data["double_sided"] == False:
+        back_url = new_card["CustomDeck"]["123"]["BackURL"]
+    else:
+        back_url = find_back_url(adb_id)
+        
     new_card["GMNotes"] = adb_id
     new_card["Nickname"] = translated_name
-    new_card["CardID"] = data["card_id"]
-    new_card["CustomDeck"][deck_id] = new_card["CustomDeck"].pop("123")
-    new_card["CustomDeck"][deck_id].update({
-        "FaceURL": uploaded_url,
+    new_card["CardID"] = f"{deck_id}{card_id:02}"
+    new_card["CustomDeck"][f"{deck_id}"] = {
+        "FaceURL": face_url,
         "BackURL": back_url,
         "NumWidth": w,
         "NumHeight": h,
         "BackIsHidden": True,
         "UniqueBack": False,
         "Type": 0
-    })
+    }
     return new_card
 
 
 def get_arkhamdb_id(folder_name, file_name):
     """Constructs the ArkhamDB ID"""
-    # assume that file names with at least 4 digits are valid ArkhamDB IDs
+    # assume that file names with at least 5 digits are valid ArkhamDB IDs
     if len(file_name) < 5:
         # if filename isn't already a full adb_id, construct it from folder name + file name
         zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
@@ -101,12 +106,6 @@ def get_arkhamdb_id(folder_name, file_name):
             return "ERROR"
         return f"{folder_name}{'0'*zero_count}{file_name}"
     return file_name
-
-
-def extract_numbers(string):
-    """Removes all non-number characters from a string"""
-    numbers = re.findall(r"\d+", string)
-    return "".join(numbers)
 
 
 def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
@@ -213,7 +212,54 @@ def escape_lua_file(file_path):
     # Python's built-in functions can handle all required escape sequences
     return json.dumps(lua_str)
 
+def find_back_url(adb_id):
+    """Finds the URLs of the sheet that has the cardbacks for the provided ID."""
+    for _, data in sheet_parameters.items():
+        if data["sheet_type"] == "back" and is_URL_contained(adb_id, data["start_id"], data["end_id"]):
+            return data["uploaded_url"]
 
+def is_URL_contained(adb_id, start_id, end_id):
+    """Returns true if the ArkhamDB ID is part of this range."""
+    return int(start_id) <= int(adb_id) and int(adb_id) <= int(end_id)
+
+def process_cards(card_list, sheet_type):
+    """Processes a list of cards and collects the data for the decksheet creation."""
+    global last_cycle_id, last_id, card_id, deck_id, sheet_parameters
+
+    for adb_id, data in card_list:
+        # we're just starting out or got to a new cycle or have to start a new sheet
+        if (
+            last_cycle_id == 0
+            or last_cycle_id != data["cycle_id"]
+            or card_id == (cfg["img_count_per_sheet"] - 1)
+        ):
+            # add end index to last parameter
+            if deck_id != 0:
+                sheet_parameters[deck_id]["end_id"] = last_id
+
+            deck_id += 1
+            card_id = 0
+
+            # initialize dictionary
+            sheet_parameters[deck_id] = {"img_path_list": [], "start_id": adb_id, "sheet_type": sheet_type}
+        else:
+            card_id += 1
+
+        # store information for next iteration
+        last_cycle_id = data["cycle_id"]
+        last_id = adb_id
+
+        # add image to list
+        sheet_parameters[deck_id]["img_path_list"].append(data["file_path"])
+        
+        # add data to sheet
+        data["deck_id"] = deck_id
+        data["card_id"] = card_id
+
+    # Add end index for the last sheet
+    if deck_id != 0:
+        sheet_parameters[deck_id]["end_id"] = last_id
+        
 # -----------------------------------------------------------
 # main script
 # -----------------------------------------------------------
@@ -232,7 +278,7 @@ for subdir, dirs, files in os.walk(cfg["source_folder"]):
             continue
         
         # check if a face for this card is already added to the index and mark it as double-sided
-        numbers = extract_numbers(adb_id)
+        numbers = "".join(re.findall(r"\d+", adb_id)) # remove all non-numeric characters
         double_sided = False
         if numbers in card_index:
             double_sided = True
@@ -250,15 +296,16 @@ card_index = dict(sorted(card_index.items(), lambda x: (int(x[0][:-1] if x[0][-1
 
 # loop through index and collect data for decksheets
 single_sided_cards = []
-double_sided_cards = {"front": [], "back": []}
+double_sided_cards_front = []
+double_sided_cards_back = []
 
 # separate single-sided and double-sided cards
 for adb_id, data in card_index.items():
     if data["double_sided"] == True:
         if adb_id.endswith('b'):
-            double_sided_cards["back"].append((adb_id, data))
+            double_sided_cards_back.append((adb_id, data))
         else:
-            double_sided_cards["front"].append((adb_id, data))
+            double_sided_cards_front.append((adb_id, data))
     else:
         single_sided_cards.append((adb_id, data))
 
@@ -266,64 +313,9 @@ for adb_id, data in card_index.items():
 last_cycle_id, last_id, card_id, deck_id = 0, 0, 0, 0
 sheet_parameters = {}
 
-# process single-sided cards
-for adb_id, data in single_sided_cards:
-    # we're just starting out or got to a new cycle or have to start a new sheet
-    if (
-        last_cycle_id == 0
-        or last_cycle_id != data["cycle_id"]
-        or card_id == (cfg["img_count_per_sheet"] - 1)
-    ):
-        # add end index to last parameter
-        if deck_id != 0:
-            sheet_parameters[deck_id]["endId"] = last_id
-
-        deck_id += 1
-        card_id = 0
-
-        # initialize dictionary
-        sheet_parameters[deck_id] = {"img_path_list": [], "startId": adb_id}
-    else:
-        card_id += 1
-
-    # store information for next iteration
-    last_cycle_id = data["cycle_id"]
-    last_id = adb_id
-
-    # add image to list and update card index
-    sheet_parameters[deck_id]["img_path_list"].append(data["file_path"])
-    data["deck_id"] = f"{deck_id}"
-
-    # ensure the card_id field has two digit length
-    data["card_id"] = f"{deck_id}{card_id:02}"
-
-# add end index for last single-sided sheet
-if deck_id != 0:
-    sheet_parameters[deck_id]["endId"] = last_id
-    
-# process double-sided cards
-for side in ["front", "back"]:
-    deck_id += 1
-    card_id = 0
-    sheet_parameters[deck_id] = {"img_path_list": [], "startId": double_sided_cards[side][0][0]}
-    
-    for adb_id, data in double_sided_cards[side]:
-        if card_id == (cfg["img_count_per_sheet"] - 1):
-            # start a new sheet if the current one is full
-            sheet_parameters[deck_id]["endId"] = adb_id
-            deck_id += 1
-            card_id = 0
-            sheet_parameters[deck_id] = {"img_path_list": [], "startId": adb_id}
-        
-        sheet_parameters[deck_id]["img_path_list"].append(data["file_path"])
-        data["deck_id"] = f"{deck_id}"
-        data["card_id"] = f"{deck_id}{card_id:02}"
-        
-        card_id += 1
-        last_id = adb_id
-    
-    # add end index for last double-sided sheet
-    sheet_parameters[deck_id]["endId"] = last_id
+process_cards(single_sided_cards, "single")
+process_cards(double_sided_cards_front, "front")
+process_cards(double_sided_cards_back, "back")
 
 # create temp folder for decksheets
 temp_path = os.path.join(script_dir, "temp")
@@ -335,7 +327,7 @@ os.mkdir(temp_path)
 for deck_id, data in sheet_parameters.items():
     card_count = len(data["img_path_list"])
     grid_size = (math.ceil(card_count / 10), 10)
-    online_name = f"SheetDE{data["startId"]}-{data["endId"]}"
+    online_name = f"SheetDE{data["start_id"]}-{data["end_id"]}"
     sheet_name = f"{online_name}.jpg"
 
     print(f"Creating {sheet_name}")
@@ -364,9 +356,11 @@ bag["LuaScript"] = escape_lua_file("TTSBagLuaScript.lua")
 # loop cards and add them to bag
 print("Creating output file.")
 for adb_id, data in card_index.items():
-    card_json = get_card_json(adb_id, data)
-    if card_json != "ERROR":
-        bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
+    # skip card backs of double-sided cards
+    if not adb_id.endswith('b'):
+        card_json = get_card_json(adb_id, data)
+        if card_json != "ERROR":
+            bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
 
 # output the bag with translated cards
 bag_path = os.path.join(output_folder, f"{bag_name}.json")
