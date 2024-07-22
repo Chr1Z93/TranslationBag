@@ -104,7 +104,8 @@
           "HideWhenFaceDown": true,
           "Hands": true,
           "CardID": 12300,
-          "SidewaysCard": false
+          "SidewaysCard": false,
+          "CustomDeck": {}
         }
       ]
     }

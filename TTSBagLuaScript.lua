@@ -34,6 +34,9 @@ function getMetadata()
     -- copy script and XML
     objData["LuaScript"] = cardData.data["LuaScript"]
     objData["XmlUI"] = cardData.data["XmlUI"]
+
+    -- copy sideways card information
+    objData["SidewaysCard"] = cardData.data["SidewaysCard"]
   end
 
   printToAll("Successfully loaded metadata.")

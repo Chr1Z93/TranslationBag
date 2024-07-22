@@ -46,9 +46,17 @@ def get_card_json(adb_id, data):
     h, w = sheet_param["grid_size"]
     
     if data["double_sided"] == False:
-        back_url = new_card["CustomDeck"]["123"]["BackURL"]
+        unique_back = False
+        back_url = player_card_back_url
     else:
+        unique_back = False
         back_url = find_back_url(adb_id)
+        
+        if back_url == "ERROR":
+            if reported_missing_url.get(deck_id, False):
+                print(f"Didn't find back URL for sheet {deck_id}")
+                reported_missing_url[deck_id] = True
+            raise ValueError("uploaded_url not found in sheet_parameters")
         
     new_card["GMNotes"] = adb_id
     new_card["Nickname"] = translated_name
@@ -59,7 +67,7 @@ def get_card_json(adb_id, data):
         "NumWidth": w,
         "NumHeight": h,
         "BackIsHidden": True,
-        "UniqueBack": False,
+        "UniqueBack": unique_back,
         "Type": 0
     }
     return new_card
@@ -122,23 +130,20 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
     return output_path
 
 
-def file_exists(online_name):
-    """Checks if a file already exists online."""
-    try:
-        result = cloudinary.Search().expression(online_name).max_results("1").execute()
-        return result["total_count"] == 1
-    except Exception as e:
-        print(f"Error when checking if file exists: {e}")
-        return False
-
 def upload_file(online_name, file_path):
     """Uploads a file if it isn't already uploaded."""
     
-    if file_exists(online_name):
-        print(f"Found file online: {online_name}")
-        return result["resources"][0]["secure_url"]
+    # check if the file is already uploaded
+    try:
+        result = cloudinary.Search().expression(online_name).max_results("1").execute()
+        if result["total_count"] == 1:
+            print(f"{online_name} - already uploaded")
+            return result["resources"][0]["secure_url"]
+    except Exception as e:
+        print(f"Error when checking if file exists: {e}")
 
-    print(f"Uploading file: {online_name}")
+    # upload the file since it wasn't found in the cloud
+    print(f"{online_name} - uploading")
     try:
         result = cloudinary.uploader.upload(
             file_path,
@@ -186,29 +191,23 @@ def escape_lua_file(file_path):
     return json.dumps(lua_str)
 
 def find_back_url(adb_id):
-    """Finds the URLs of the sheet that has the cardbacks for the provided ID."""
+    """Finds the URL of the sheet that has the cardbacks for the provided ID."""
     for _, data in sheet_parameters.items():
         if data["sheet_type"] == "back" and is_URL_contained(adb_id, data["start_id"], data["end_id"]):
-            return data["uploaded_url"]
+            if "uploaded_url" in data:
+                return data["uploaded_url"]
+            else:
+                return "ERROR"
 
 def is_URL_contained(adb_id, start_id, end_id):
     """Returns true if the ArkhamDB ID is part of this range."""
-    pseudo_list = {
-        card_index[adb_id],
-        card_index[start_id],
-        card_index[end_id]
-    }
-    
-    pseudo_list = dict(sorted(pseudo_list.items(), key=sort_key))
-    # check if adb_id is the middle item in pseduo_list
-    return pseudo_list[1] == adb_id
+    return sort_key(start_id) <= sort_key(adb_id) <= sort_key(end_id)
 
 def process_cards(card_list, sheet_type):
     """Processes a list of cards and collects the data for the decksheet creation."""
     global last_cycle_id, last_id, card_id, deck_id, sheet_parameters
 
     for adb_id, data in card_list:
-        print(f"{sheet_type} - {adb_id} - {data["cycle_id"]}")
         # we're just starting out or got to a new cycle or have to start a new sheet
         if (
             last_cycle_id == 0
@@ -283,6 +282,7 @@ output_folder = os.path.join(
 )
 
 # probably don't need to change these
+player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
 bag_template = "TTSBagTemplate.json"
 arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
 script_dir = os.path.dirname(__file__)
@@ -359,11 +359,17 @@ os.mkdir(temp_path)
 # create decksheets with previously collected information
 for deck_id, data in sheet_parameters.items():
     card_count = len(data["img_path_list"])
-    grid_size = (math.ceil(card_count / 10), 10)
-    online_name = f"SheetDE{data["start_id"]}-{data["end_id"]}"
+    images_per_row = 10
+
+    # if there is just a single row of images, shrink the grid
+    if card_count < images_per_row:
+        images_per_row = card_count
+
+    grid_size = (math.ceil(card_count / 10), images_per_row)
+    online_name = f"Sheet{cfg["locale"].upper()}{data["start_id"]}-{data["end_id"]}"
     sheet_name = f"{online_name}.jpg"
 
-    print(f"Creating {sheet_name}")
+    print(f"{online_name} - creation")
     sheet_path = create_decksheet(
         data["img_path_list"],
         grid_size,
@@ -384,7 +390,7 @@ bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
 bag["ObjectStates"][0]["ContainedObjects"] = []
-bag["LuaScript"] = escape_lua_file("TTSBagLuaScript.lua")
+bag["ObjectStates"][0]["LuaScript"] = escape_lua_file("TTSBagLuaScript.lua")
 
 # loop cards and add them to bag
 print("Creating output file.")
