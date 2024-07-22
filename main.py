@@ -193,13 +193,22 @@ def find_back_url(adb_id):
 
 def is_URL_contained(adb_id, start_id, end_id):
     """Returns true if the ArkhamDB ID is part of this range."""
-    return int(start_id) <= int(adb_id) and int(adb_id) <= int(end_id)
+    pseudo_list = {
+        card_index[adb_id],
+        card_index[start_id],
+        card_index[end_id]
+    }
+    
+    pseudo_list = dict(sorted(pseudo_list.items(), key=sort_key))
+    # check if adb_id is the middle item in pseduo_list
+    return pseudo_list[1] == adb_id
 
 def process_cards(card_list, sheet_type):
     """Processes a list of cards and collects the data for the decksheet creation."""
     global last_cycle_id, last_id, card_id, deck_id, sheet_parameters
 
     for adb_id, data in card_list:
+        print(f"{sheet_type} - {adb_id} - {data["cycle_id"]}")
         # we're just starting out or got to a new cycle or have to start a new sheet
         if (
             last_cycle_id == 0
@@ -238,16 +247,20 @@ def sort_key(item):
     """sort function for the card index"""
     key = item[0]
     
-    # check if the last character is alphabetic
-    if key[-1].isalpha():
-        number_part = key[:-1]  # everything except the last character
-        letter_part = key[-1]   # just the last character
-    else:
-        number_part = key
-        letter_part = ''
+    # regular expression to match the pattern
+    pattern = r'^(\d{5})([a-z])?(?:-([a-z]\d+))?$'
+    match = re.match(pattern, key)
     
-    # Return a tuple for sorting: (integer part, letter part)
-    return (int(number_part), letter_part)
+    if match:
+        number = match.group(1)  # 5-digit part
+        letter = match.group(2) or ''  # optional letter appendix
+        suffix = match.group(3) or ''  # optional suffix
+        
+        # return a tuple for sorting
+        return (number, letter, suffix)
+    else:
+        # fallback for any items that don't match the expected pattern
+        return (key,)
     
 # -----------------------------------------------------------
 # main script
@@ -296,11 +309,13 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
             continue
         
         # check if a face for this card is already added to the index and mark it as double-sided
-        numbers = "".join(re.findall(r"\d+", adb_id)) # remove all non-numeric characters
         double_sided = False
-        if numbers in card_index:
-            double_sided = True
-            card_index[numbers]["double_sided"] = True
+        if adb_id.endswith('b'):
+            face_id = adb_id[:-1]
+            
+            if face_id in card_index:
+                double_sided = True
+                card_index[face_id]["double_sided"] = True
 
         # add card to index
         card_index[adb_id] = {
