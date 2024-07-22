@@ -96,24 +96,35 @@ class App:
 
     def load_settings(self):
         """Loads settings from the config file"""
-        if not os.path.exists("config.json"):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(script_dir)
+        config_path = os.path.join(parent_dir, "config.json")
+
+        if not os.path.exists(config_path):
             return
 
-        with open("config.json", "r") as f:
+        with open(config_path, "r") as f:
             self.cfg.update(json.load(f))
-        for _, var_name in self.fields:
-            self.entries[var_name].insert(0, self.cfg.get(var_name, ""))
+
+        for _, var_name, expected_type in self.fields:
+            value = self.cfg.get(var_name, "")
+
+            # convert the value back to string for display in the entry widget
+            if expected_type != str and value != "":
+                value = str(value)
+
+            self.entries[var_name].insert(0, value)
 
         # load settings for source folder
         self.source_folder_entry.insert(0, self.cfg.get("source_folder", ""))
 
         # load settings for sliders and labels
-        self.img_count_per_sheet_slider.set(self.cfg.get("img_count_per_sheet", 30))
+        self.count_per_sheet_slider.set(self.cfg.get("img_count_per_sheet", 30))
         self.update_label(
             self.count_per_sheet_label, self.cfg.get("img_count_per_sheet", 30), 10
         )
-        self.img_quality_slider.set(self.cfg.get("img_quality", 90))
-        self.update_label(self.quality_value_label, self.cfg.get("img_quality", 90))
+        self.quality_slider.set(self.cfg.get("img_quality", 90))
+        self.update_label(self.quality_label, self.cfg.get("img_quality", 90))
 
     def submit(self):
         """Reads the form and saves settings to config file before continuing"""
