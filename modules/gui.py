@@ -13,20 +13,20 @@ class App:
 
         # Definition of input fields and labels
         self.fields = [
-            ("Max Filesize Byte", "img_max_byte"),
-            ("Image Width", "img_w"),
-            ("Image Height", "img_h"),
-            ("Cloud Name", "cloud_name"),
-            ("API Key", "api_key"),
-            ("API Secret", "api_secret"),
-            ("Locale", "locale"),
-            ("Max Sheet Count", "max_sheet_count"),
+            ("Max Filesize Byte", "img_max_byte", int),
+            ("Image Width", "img_w", int),
+            ("Image Height", "img_h", int),
+            ("Cloud Name", "cloud_name", str),
+            ("API Key", "api_key", str),
+            ("API Secret", "api_secret", str),
+            ("Locale", "locale", str),
+            ("Max Sheet Count", "max_sheet_count", int),
         ]
 
         self.entries = {}
 
         # Create input fields
-        for i, (label_text, var_name) in enumerate(self.fields):
+        for i, (label_text, var_name, _) in enumerate(self.fields):
             ttk.Label(self.root, text=label_text).grid(
                 row=i, column=0, padx=10, pady=5, sticky=tk.E
             )
