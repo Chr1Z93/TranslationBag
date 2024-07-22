@@ -130,18 +130,33 @@ class App:
         """Reads the form and saves settings to config file before continuing"""
         try:
             # get values from input fields
-            for _, var_name in self.fields:
-                self.cfg[var_name] = int(self.entries[var_name].get())
+            for field_name, var_name, expected_type in self.fields:
+                value = self.entries[var_name].get()
+                if not value:
+                    raise ValueError(f"Field '{field_name}' is empty.")
+
+                try:
+                    if expected_type == int:
+                        self.cfg[var_name] = int(value)
+                    else:
+                        self.cfg[var_name] = value
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid input for '{field_name}'. Please enter a valid {expected_type.__name__}."
+                    )
 
             # get values from sliders
-            self.cfg["img_quality"] = self.img_quality_slider.get()
-            self.cfg["img_count_per_sheet"] = int(self.img_count_per_sheet_slider.get())
+            self.cfg["img_quality"] = int(self.quality_slider.get())
+            self.cfg["img_count_per_sheet"] = (
+                round(self.count_per_sheet_slider.get() / 10) * 10
+            )
 
             # save settings
             with open("config.json", "w") as f:
                 json.dump(self.cfg, f, indent=4)
-        except ValueError:
-            messagebox.showerror("Invalid input", "All fields are mandatory.")
+
+        except ValueError as e:
+            messagebox.showerror("Invalid input", str(e))
 
     def browse_source_folder(self):
         """Helper function for the browse button of the source-folder field"""
