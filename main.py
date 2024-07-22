@@ -258,6 +258,7 @@ bag_template = "TTSBagTemplate.json"
 arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
 script_dir = os.path.dirname(__file__)
 
+# cloudinary api settings
 cloudinary.config(
     cloud_name=cfg["cloud_name"],
     api_key=cfg["api_key"],
