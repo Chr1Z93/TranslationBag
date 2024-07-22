@@ -95,14 +95,17 @@ def get_card_json(adb_id, data):
     return new_card
 
 
-def get_arkhamdb_id(folder_name, file_name):
+def get_arkhamdb_id(current_path, file):
     """Constructs the ArkhamDB ID"""
+    folder_name = os.path.basename(current_path)
+    file_name = os.path.splitext(file)[0]
+        
     # assume that file names with at least 5 digits are valid ArkhamDB IDs
     if len(file_name) < 5:
         # if filename isn't already a full adb_id, construct it from folder name + file name
         zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
         if zero_count < 0:
-            print(f"Error getting ID for {os.path.join(subdir, file)}")
+            print(f"Error getting ID for {os.path.join(current_path, file)}")
             return "ERROR"
         return f"{folder_name}{'0'*zero_count}{file_name}"
     return file_name
@@ -266,12 +269,10 @@ def process_cards(card_list, sheet_type):
 
 # process input files
 card_index = {}
-for subdir, dirs, files in os.walk(cfg["source_folder"]):
-    print(f"Processing folder: {subdir}")
+for current_path, directories, files in os.walk(cfg["source_folder"]):
+    print(f"Processing folder: {current_path}")
     for file in files:
-        folder_name = os.path.basename(subdir)
-        file_name = os.path.splitext(file)[0]
-        adb_id = get_arkhamdb_id(folder_name, file_name)
+        adb_id = get_arkhamdb_id(current_path, file)
 
         # skip this file because we don't have a proper ArkhamDB ID for it
         if adb_id == "ERROR":
@@ -287,7 +288,7 @@ for subdir, dirs, files in os.walk(cfg["source_folder"]):
         # add card to index
         card_index[adb_id] = {
             "cycle_id": int(adb_id[:2]),
-            "file_path": os.path.join(subdir, file),
+            "file_path": os.path.join(current_path, file),
             "double_sided": double_sided
         }
 
