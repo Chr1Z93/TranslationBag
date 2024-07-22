@@ -11,7 +11,7 @@ class App:
         self.root = tk.Tk()
         self.root.protocol("WM_DELETE_WINDOW", self.close_app)
 
-        # Definition of input fields and labels
+        # definition of input fields, labels and expected type
         self.fields = [
             ("Max Filesize Byte", "img_max_byte", int),
             ("Image Width", "img_w", int),
@@ -25,7 +25,7 @@ class App:
 
         self.entries = {}
 
-        # Create input fields
+        # create input fields
         for i, (label_text, var_name, _) in enumerate(self.fields):
             ttk.Label(self.root, text=label_text).grid(
                 row=i, column=0, padx=10, pady=5, sticky=tk.E
@@ -34,7 +34,7 @@ class App:
             entry.grid(row=i, column=1, padx=10, pady=5)
             self.entries[var_name] = entry
 
-        # Create source folder field and browse button
+        # create source folder field and browse button
         ttk.Label(self.root, text="Source Folder").grid(
             row=len(self.fields), column=0, padx=10, pady=5, sticky=tk.E
         )
@@ -45,27 +45,25 @@ class App:
         )
         self.browse_button.grid(row=len(self.fields), column=2, padx=10, pady=5)
 
-        # Checkbox for keeping the temp folder
+        # checkbox for keeping the temp folder
         self.keep_temp_folder_var = tk.BooleanVar()
 
-        # Sliders
-        self.img_count_per_sheet_slider, self.count_per_sheet_label = (
-            self.create_slider(
-                len(self.fields) + 2,
-                "Image Count per Sheet",
-                10,
-                70,
-                self.update_label,
-                "10",
-                10,
-            )
+        # sliders
+        self.count_per_sheet_slider, self.count_per_sheet_label = self.create_slider(
+            len(self.fields) + 2,
+            "Image Count per Sheet",
+            10,
+            70,
+            self.update_label,
+            "10",
+            10,
         )
 
-        self.img_quality_slider, self.quality_value_label = self.create_slider(
+        self.quality_slider, self.quality_label = self.create_slider(
             len(self.fields) + 3, "Image Quality", 1, 100, self.update_label, "90"
         )
 
-        # Submit button
+        # submit button
         self.submit_button = ttk.Button(self.root, text="Submit", command=self.submit)
         self.submit_button.grid(row=len(self.fields) + 5, columnspan=3, pady=10)
 

@@ -16,36 +16,6 @@ import cloudinary
 import cloudinary.api
 import cloudinary.uploader
 
-# open the main window to collect data
-form = App()
-
-# get data from form
-cfg = form.get_values()
-
-# use TTS' saved objects folder as default output folder
-output_folder = os.path.join(
-    os.environ["USERPROFILE"],
-    "Documents",
-    "My Games",
-    "Tabletop Simulator",
-    "Saves",
-    "Saved Objects"
-)
-
-# probably don't need to change these
-bag_template = "TTSBagTemplate.json"
-arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
-script_dir = os.path.dirname(__file__)
-
-cloudinary.config(
-    cloud_name=cfg["cloud_name"],
-    api_key=cfg["api_key"],
-    api_secret=cfg["api_secret"],
-)
-
-# keep track of the deckIds that the missing URL was reported for
-reported_missing_url = {}
-
 
 def load_json_file(file_name):
     """Opens a JSON file in the script_dir"""
@@ -266,6 +236,36 @@ def process_cards(card_list, sheet_type):
 # -----------------------------------------------------------
 # main script
 # -----------------------------------------------------------
+
+# open the main window to collect data
+form = App()
+
+# get data from form
+cfg = form.get_values()
+
+# use TTS' saved objects folder as default output folder
+output_folder = os.path.join(
+    os.environ["USERPROFILE"],
+    "Documents",
+    "My Games",
+    "Tabletop Simulator",
+    "Saves",
+    "Saved Objects"
+)
+
+# probably don't need to change these
+bag_template = "TTSBagTemplate.json"
+arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
+script_dir = os.path.dirname(__file__)
+
+cloudinary.config(
+    cloud_name=cfg["cloud_name"],
+    api_key=cfg["api_key"],
+    api_secret=cfg["api_secret"],
+)
+
+# keep track of the deckIds that the missing URL was reported for
+reported_missing_url = {}
 
 # process input files
 card_index = {}
