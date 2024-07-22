@@ -153,6 +153,9 @@ class App:
             with open("config.json", "w") as f:
                 json.dump(self.cfg, f, indent=4)
 
+            # quit the GUI and continue with the main script
+            self.root.quit()
+
         except ValueError as e:
             messagebox.showerror("Invalid input", str(e))
 
