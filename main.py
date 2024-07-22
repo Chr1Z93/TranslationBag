@@ -233,6 +233,22 @@ def process_cards(card_list, sheet_type):
     if deck_id != 0:
         sheet_parameters[deck_id]["end_id"] = last_id
         
+        
+def sort_key(item):
+    """sort function for the card index"""
+    key = item[0]
+    
+    # check if the last character is alphabetic
+    if key[-1].isalpha():
+        number_part = key[:-1]  # everything except the last character
+        letter_part = key[-1]   # just the last character
+    else:
+        number_part = key
+        letter_part = ''
+    
+    # Return a tuple for sorting: (integer part, letter part)
+    return (int(number_part), letter_part)
+    
 # -----------------------------------------------------------
 # main script
 # -----------------------------------------------------------
@@ -293,8 +309,8 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
             "double_sided": double_sided
         }
 
-# sort the card index (numbers first, than by letter appendix)
-card_index = dict(sorted(card_index.items(), lambda x: (int(x[0][:-1] if x[0][-1].isalpha() else x[0]), x[0][-1] if x[0][-1].isalpha() else '')))
+# sort the card index (numbers first, than by letter appendix)    
+card_index = dict(sorted(card_index.items(), key=sort_key))
 
 # loop through index and collect data for decksheets
 single_sided_cards = []
