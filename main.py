@@ -35,7 +35,7 @@ def get_card_json(adb_id, data):
         if reported_missing_url.get(deck_id, False):
             print(f"Didn't find URL for sheet {deck_id}")
             reported_missing_url[deck_id] = True
-        raise ValueError("uploaded_url not found in sheet_parameters")
+        raise KeyError("uploaded_url not found in sheet_parameters")
     
     # create Json element
     new_card = copy.deepcopy(card_template)
@@ -44,18 +44,16 @@ def get_card_json(adb_id, data):
     h, w = sheet_param["grid_size"]
     
     if data["double_sided"] == False:
-        unique_back = False
         back_url = player_card_back_url
     else:
-        unique_back = False
-
         try:
             back_url = find_back_url(adb_id)
-        except:
+        except KeyError as e:
             if reported_missing_url.get(deck_id, False):
-                print(f"Didn't find back URL for sheet {deck_id}")
+                print(f"{adb_id} - {e}")
                 reported_missing_url[deck_id] = True
-            raise ValueError("uploaded_url not found in sheet_parameters")
+            return None
+
         
     new_card["GMNotes"] = adb_id
     new_card["Nickname"] = get_translated_name(adb_id)
@@ -66,7 +64,7 @@ def get_card_json(adb_id, data):
         "NumWidth": w,
         "NumHeight": h,
         "BackIsHidden": True,
-        "UniqueBack": unique_back,
+        "UniqueBack": data["double_sided"],
         "Type": 0
     }
     return new_card
@@ -91,10 +89,10 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
     """Stitches the provided images together to deck sheet"""
     rows, cols = grid_size
 
-    # Create a blank canvas for the grid
+    # create a blank canvas for the grid
     grid_image = Image.new("RGB", (cols * img_w, rows * img_h))
 
-    # Paste each image onto the canvas
+    # paste each image onto the canvas
     for index, img_path in enumerate(img_path_list):
         try:
             with Image.open(img_path) as img:
@@ -107,14 +105,14 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
             print(f"Error opening image {img_path}")
             continue
 
-    # Save the final grid image with initial quality cfg
+    # save the final grid image with initial quality cfg
     quality = cfg["img_quality"]
     grid_image.save(output_path, quality=quality, optimize=True)
 
-    # Check the file size
+    # check the file size
     file_size = os.path.getsize(output_path)
 
-    # Adjust quality until the file size is within the limit
+    # adjust quality until the file size is within the limit
     while file_size > cfg["img_max_byte"] and quality > cfg["img_quality_reduce"]:
         reduction_ratio = cfg["img_max_byte"] / file_size
         quality = int(quality * reduction_ratio)
@@ -158,22 +156,22 @@ def get_translated_name(adb_id):
     try:
         response = urlopen(arkhamdb_url + adb_id)
     except HTTPError as e:
-        print(f"Couldn't get translated name for ID: {adb_id} (HTTP {e.code})")
+        print(f"{adb_id} - couldn't get translated name (HTTP {e.code})")
         return "ERROR"
     except URLError as e:
-        print(f"Couldn't get translated name for ID: {adb_id} (URL {e.reason})")
+        print(f"{adb_id} - couldn't get translated name (URL {e.reason})")
         return "ERROR"
 
     try:
         data_json = json.loads(response.read())
     except json.JSONDecodeError:
-        print(f"Couldn't parse JSON for ID: {adb_id}")
+        print(f"{adb_id} - couldn't parse JSON")
         return "ERROR"
 
     try:
         return data_json["name"]
     except KeyError:
-        print(f"JSON for ID: {adb_id} did not contain 'name' key")
+        print(f"{adb_id} - JSON response did not contain 'name' key")
         return "ERROR"
 
 
@@ -192,10 +190,11 @@ def find_back_url(adb_id):
     """Finds the URL of the sheet that has the cardbacks for the provided ID."""
     for _, data in sheet_parameters.items():
         if data["sheet_type"] == "back" and is_URL_contained(adb_id, data["start_id"], data["end_id"]):
-            if "uploaded_url" in data:
-                return data["uploaded_url"]
-            else:
-                raise ValueError("uploaded_url not found in sheet_parameters")
+            if "uploaded_url" not in data:
+                raise KeyError(f"uploaded_url not found in sheet_parameters")
+            return data["uploaded_url"]
+    raise KeyError(f"no matching back URL found")
+
 
 def is_URL_contained(adb_id, start_id, end_id):
     """Returns true if the ArkhamDB ID is part of this range."""
@@ -383,7 +382,7 @@ for deck_id, data in sheet_parameters.items():
         break
 
 # load the bag template and update it
-bag_name = "Translated Cards - " + cfg["locale"].upper()
+bag_name = "Translated Cards - " + cfg["locale"].upper() + " - " + os.path.basename(os.path.dirname(cfg["source_folder"]))
 bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
@@ -395,11 +394,11 @@ print("Creating output file.")
 for adb_id, data in card_index.items():
     # skip card backs of double-sided cards
     if not adb_id.endswith('b'):
-        try:
-            card_json = get_card_json(adb_id, data)
+        card_json = get_card_json(adb_id, data)
+        if card_json:
             bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
-        except Exception as e:
-            print(f"{adb_id} - Error: {e}")
+        else:
+            print(f"{adb_id} - failed to get card JSON")
 
 # output the bag with translated cards
 bag_path = os.path.join(output_folder, f"{bag_name}.json")
