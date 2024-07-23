@@ -178,12 +178,11 @@ def get_translated_name(adb_id):
         return "ERROR"
 
 
-def escape_lua_file(file_path):
-    """Escapes the script from a Lua file to be included in JSON."""
+def get_lua_file(file_path):
+    """Gets the script from a Lua file to be included in JSON."""
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
-            lua_str = file.read()
-        return json.dumps(lua_str)
+            return file.read()
     except (FileNotFoundError, OSError) as e:
         raise IOError(f"Error reading Lua file: {e}")
 
@@ -397,7 +396,7 @@ bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
 bag["ObjectStates"][0]["ContainedObjects"] = []
-bag["ObjectStates"][0]["LuaScript"] = escape_lua_file("TTSBagLuaScript.lua")
+bag["ObjectStates"][0]["LuaScript"] = get_lua_file("TTSBagLuaScript.lua")
 
 # loop cards and add them to bag
 print("Creating output file.")
