@@ -5,6 +5,7 @@ import os
 import random
 import re
 import shutil
+import sys
 from PIL import Image
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
@@ -27,8 +28,7 @@ def load_json_file(file_name):
 
 def get_card_json(adb_id, data):
     """Create a JSON object for a card"""
-    # add random value to deck_id as a first measure against deck_id clashes
-    deck_id = data["deck_id"] + random.randint(1000, 3000) * 10
+    deck_id = data["deck_id"]
     card_id = data["card_id"]
     sheet_param = sheet_parameters[deck_id]
     
@@ -56,11 +56,13 @@ def get_card_json(adb_id, data):
                 reported_missing_url[deck_id] = True
             return None
 
-        
+    # add random value to deck_id as a first measure against deck_id clashes
+    random_num = random.randint(1000, 3000) * 10
+    
     new_card["GMNotes"] = adb_id
     new_card["Nickname"] = get_translated_name(adb_id)
-    new_card["CardID"] = f"{deck_id}{card_id:02}"
-    new_card["CustomDeck"][f"{deck_id}"] = {
+    new_card["CardID"] = f"{deck_id + random_num}{card_id:02}"
+    new_card["CustomDeck"][f"{deck_id + random_num}"] = {
         "FaceURL": sheet_param["uploaded_url"],
         "BackURL": back_url,
         "NumWidth": w,
@@ -294,6 +296,11 @@ cloudinary.config(
 
 # keep track of the deckIds that the missing URL was reported for
 reported_missing_url = {}
+
+# check if the folder exists
+if not os.path.exists(cfg["source_folder"]) or not os.path.isdir(cfg["source_folder"]):
+    print("The folder does not exist.")
+    sys.exit("Invalid folder")
 
 # process input files
 card_index = {}
