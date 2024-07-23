@@ -86,9 +86,7 @@
             "g": 0.7,
             "b": 0.7
           },
-          "Tags": [
-            "PlayerCard"
-          ],
+          "Tags": [],
           "LayoutGroupSortIndex": 0,
           "Value": 0,
           "Locked": false,

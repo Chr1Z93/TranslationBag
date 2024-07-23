@@ -181,13 +181,11 @@ def get_translated_name(adb_id):
 def escape_lua_file(file_path):
     """Escapes the script from a Lua file to be included in JSON."""
     try:
-        with open(file_path, 'r') as file:
+        with open(file_path, 'r', encoding='utf-8') as file:
             lua_str = file.read()
+        return json.dumps(lua_str)
     except (FileNotFoundError, OSError) as e:
-        return str(e)
-
-    # Python's built-in functions can handle all required escape sequences
-    return json.dumps(lua_str)
+        raise IOError(f"Error reading Lua file: {e}")
 
 def find_back_url(adb_id):
     """Finds the URL of the sheet that has the cardbacks for the provided ID."""
@@ -201,7 +199,7 @@ def find_back_url(adb_id):
 
 def is_URL_contained(adb_id, start_id, end_id):
     """Returns true if the ArkhamDB ID is part of this range."""
-    return sort_key(start_id) <= sort_key(adb_id) <= sort_key(end_id)
+    return sort_key((start_id,)) <= sort_key((adb_id,)) <= sort_key((end_id,))
 
 def process_cards(card_list, sheet_type):
     """Processes a list of cards and collects the data for the decksheet creation."""

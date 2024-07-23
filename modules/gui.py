@@ -143,6 +143,9 @@ class App:
                         f"Invalid input for '{field_name}'. Please enter a valid {expected_type.__name__}."
                     )
 
+            # get path
+            self.cfg["source_folder"] = self.source_folder_entry.get()
+
             # get values from sliders
             self.cfg["img_quality"] = int(self.quality_slider.get())
             self.cfg["img_count_per_sheet"] = (
