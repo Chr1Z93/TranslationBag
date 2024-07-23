@@ -382,7 +382,7 @@ for deck_id, data in sheet_parameters.items():
         break
 
 # load the bag template and update it
-bag_name = "Translated Cards - " + cfg["locale"].upper() + " - " + os.path.basename(os.path.dirname(cfg["source_folder"]))
+bag_name = "Translated Cards - " + cfg["locale"].upper() + " - " + os.path.basename(cfg["source_folder"])
 bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
