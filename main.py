@@ -41,8 +41,6 @@ def get_card_json(adb_id, data):
     new_card = copy.deepcopy(card_template)
     
     # collect data for card
-    translated_name = get_translated_name(adb_id)
-    face_url = sheet_param["uploaded_url"]
     h, w = sheet_param["grid_size"]
     
     if data["double_sided"] == False:
@@ -50,19 +48,20 @@ def get_card_json(adb_id, data):
         back_url = player_card_back_url
     else:
         unique_back = False
-        back_url = find_back_url(adb_id)
-        
-        if back_url == "ERROR":
+
+        try:
+            back_url = find_back_url(adb_id)
+        except:
             if reported_missing_url.get(deck_id, False):
                 print(f"Didn't find back URL for sheet {deck_id}")
                 reported_missing_url[deck_id] = True
             raise ValueError("uploaded_url not found in sheet_parameters")
         
     new_card["GMNotes"] = adb_id
-    new_card["Nickname"] = translated_name
+    new_card["Nickname"] = get_translated_name(adb_id)
     new_card["CardID"] = f"{deck_id}{card_id:02}"
     new_card["CustomDeck"][f"{deck_id}"] = {
-        "FaceURL": face_url,
+        "FaceURL": sheet_param["uploaded_url"],
         "BackURL": back_url,
         "NumWidth": w,
         "NumHeight": h,
@@ -83,8 +82,7 @@ def get_arkhamdb_id(current_path, file):
         # if filename isn't already a full adb_id, construct it from folder name + file name
         zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
         if zero_count < 0:
-            print(f"Error getting ID for {os.path.join(current_path, file)}")
-            return "ERROR"
+            raise ValueError(f"Error getting ID for {os.path.join(current_path, file)}")
         return f"{folder_name}{'0'*zero_count}{file_name}"
     return file_name
 
@@ -161,22 +159,22 @@ def get_translated_name(adb_id):
         response = urlopen(arkhamdb_url + adb_id)
     except HTTPError as e:
         print(f"Couldn't get translated name for ID: {adb_id} (HTTP {e.code})")
-        return adb_id
+        return "ERROR"
     except URLError as e:
         print(f"Couldn't get translated name for ID: {adb_id} (URL {e.reason})")
-        return adb_id
+        return "ERROR"
 
     try:
         data_json = json.loads(response.read())
     except json.JSONDecodeError:
         print(f"Couldn't parse JSON for ID: {adb_id}")
-        return adb_id
+        return "ERROR"
 
     try:
         return data_json["name"]
     except KeyError:
         print(f"JSON for ID: {adb_id} did not contain 'name' key")
-        return adb_id
+        return "ERROR"
 
 
 def escape_lua_file(file_path):
@@ -197,7 +195,7 @@ def find_back_url(adb_id):
             if "uploaded_url" in data:
                 return data["uploaded_url"]
             else:
-                return "ERROR"
+                raise ValueError("uploaded_url not found in sheet_parameters")
 
 def is_URL_contained(adb_id, start_id, end_id):
     """Returns true if the ArkhamDB ID is part of this range."""
@@ -302,11 +300,11 @@ card_index = {}
 for current_path, directories, files in os.walk(cfg["source_folder"]):
     print(f"Processing folder: {current_path}")
     for file in files:
-        adb_id = get_arkhamdb_id(current_path, file)
-
-        # skip this file because we don't have a proper ArkhamDB ID for it
-        if adb_id == "ERROR":
-            continue
+        try:
+            adb_id = get_arkhamdb_id(current_path, file)
+        except Exception as e:
+            print(f"{e}")
+            continue # skip this file because we don't have a proper ArkhamDB ID for it
         
         # check if a face for this card is already added to the index and mark it as double-sided
         double_sided = False
@@ -397,9 +395,11 @@ print("Creating output file.")
 for adb_id, data in card_index.items():
     # skip card backs of double-sided cards
     if not adb_id.endswith('b'):
-        card_json = get_card_json(adb_id, data)
-        if card_json != "ERROR":
+        try:
+            card_json = get_card_json(adb_id, data)
             bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
+        except Exception as e:
+            print(f"{adb_id} - Error: {e}")
 
 # output the bag with translated cards
 bag_path = os.path.join(output_folder, f"{bag_name}.json")

@@ -37,6 +37,11 @@ function getMetadata()
 
     -- copy sideways card information
     objData["SidewaysCard"] = cardData.data["SidewaysCard"]
+
+    -- copy name if translated name couldn't be received
+    if objData["Nickname"] == "ERROR" then
+      objData["Nickname"] = cardData.data["Nickname"]
+    end
   end
 
   printToAll("Successfully loaded metadata.")
