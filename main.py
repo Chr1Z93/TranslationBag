@@ -2,6 +2,7 @@ import copy
 import json
 import math
 import os
+import random
 import re
 import shutil
 from PIL import Image
@@ -26,7 +27,8 @@ def load_json_file(file_name):
 
 def get_card_json(adb_id, data):
     """Create a JSON object for a card"""
-    deck_id = data["deck_id"]
+    # add random value to deck_id as a first measure against deck_id clashes
+    deck_id = data["deck_id"] + random.randint(1000, 3000) * 10
     card_id = data["card_id"]
     sheet_param = sheet_parameters[deck_id]
     
@@ -125,11 +127,8 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
         file_size = os.path.getsize(output_path)
     return output_path
 
-
-def upload_file(online_name, file_path):
-    """Uploads a file if it isn't already uploaded."""
-    
-    # check if the file is already uploaded
+def file_already_uploaded(online_name):
+    """Checks if a file is already uploaded."""
     try:
         result = cloudinary.Search().expression(online_name).max_results("1").execute()
         if result["total_count"] == 1:
@@ -137,8 +136,10 @@ def upload_file(online_name, file_path):
             return result["resources"][0]["secure_url"]
     except Exception as e:
         print(f"Error when checking if file exists: {e}")
-
-    # upload the file since it wasn't found in the cloud
+    
+    
+def upload_file(online_name, file_path):
+    """Uploads a file to the cloud and returns the URL"""
     print(f"{online_name} - uploading")
     try:
         result = cloudinary.uploader.upload(
@@ -362,21 +363,25 @@ for deck_id, data in sheet_parameters.items():
     if card_count < images_per_row:
         images_per_row = card_count
 
-    grid_size = (math.ceil(card_count / 10), images_per_row)
+    data["grid_size"] = (math.ceil(card_count / 10), images_per_row)
     online_name = f"Sheet{cfg["locale"].upper()}{data["start_id"]}-{data["end_id"]}"
     sheet_name = f"{online_name}.jpg"
 
-    print(f"{online_name} - creation")
-    sheet_path = create_decksheet(
-        data["img_path_list"],
-        grid_size,
-        cfg["img_w"],
-        cfg["img_h"],
-        os.path.join(temp_path, sheet_name),
-    )
-
-    data["uploaded_url"] = upload_file(online_name, sheet_path)
-    data["grid_size"] = grid_size
+    # check if file is already uploaded
+    result = file_already_uploaded(online_name)
+    
+    if result:
+        data["uploaded_url"] = result
+    else:
+        print(f"{online_name} - creation")
+        sheet_path = create_decksheet(
+            data["img_path_list"],
+            data["grid_size"],
+            cfg["img_w"],
+            cfg["img_h"],
+            os.path.join(temp_path, sheet_name),
+        )
+        data["uploaded_url"] = upload_file(online_name, sheet_path)
 
     if deck_id >= cfg["max_sheet_count"]:
         break
