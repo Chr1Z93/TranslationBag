@@ -2,8 +2,10 @@ import copy
 import json
 import math
 import os
+import random
 import re
 import shutil
+import sys
 from PIL import Image
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
@@ -35,7 +37,7 @@ def get_card_json(adb_id, data):
         if reported_missing_url.get(deck_id, False):
             print(f"Didn't find URL for sheet {deck_id}")
             reported_missing_url[deck_id] = True
-        raise ValueError("uploaded_url not found in sheet_parameters")
+        raise KeyError("uploaded_url not found in sheet_parameters")
     
     # create Json element
     new_card = copy.deepcopy(card_template)
@@ -44,29 +46,29 @@ def get_card_json(adb_id, data):
     h, w = sheet_param["grid_size"]
     
     if data["double_sided"] == False:
-        unique_back = False
         back_url = player_card_back_url
     else:
-        unique_back = False
-
         try:
             back_url = find_back_url(adb_id)
-        except:
+        except KeyError as e:
             if reported_missing_url.get(deck_id, False):
-                print(f"Didn't find back URL for sheet {deck_id}")
+                print(f"{adb_id} - {e}")
                 reported_missing_url[deck_id] = True
-            raise ValueError("uploaded_url not found in sheet_parameters")
-        
+            return None
+
+    # add random value to deck_id as a first measure against deck_id clashes
+    random_num = random.randint(1000, 3000) * 10
+    
     new_card["GMNotes"] = adb_id
     new_card["Nickname"] = get_translated_name(adb_id)
-    new_card["CardID"] = f"{deck_id}{card_id:02}"
-    new_card["CustomDeck"][f"{deck_id}"] = {
+    new_card["CardID"] = f"{deck_id + random_num}{card_id:02}"
+    new_card["CustomDeck"][f"{deck_id + random_num}"] = {
         "FaceURL": sheet_param["uploaded_url"],
         "BackURL": back_url,
         "NumWidth": w,
         "NumHeight": h,
         "BackIsHidden": True,
-        "UniqueBack": unique_back,
+        "UniqueBack": data["double_sided"],
         "Type": 0
     }
     return new_card
@@ -91,10 +93,10 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
     """Stitches the provided images together to deck sheet"""
     rows, cols = grid_size
 
-    # Create a blank canvas for the grid
+    # create a blank canvas for the grid
     grid_image = Image.new("RGB", (cols * img_w, rows * img_h))
 
-    # Paste each image onto the canvas
+    # paste each image onto the canvas
     for index, img_path in enumerate(img_path_list):
         try:
             with Image.open(img_path) as img:
@@ -107,14 +109,14 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
             print(f"Error opening image {img_path}")
             continue
 
-    # Save the final grid image with initial quality cfg
+    # save the final grid image with initial quality cfg
     quality = cfg["img_quality"]
     grid_image.save(output_path, quality=quality, optimize=True)
 
-    # Check the file size
+    # check the file size
     file_size = os.path.getsize(output_path)
 
-    # Adjust quality until the file size is within the limit
+    # adjust quality until the file size is within the limit
     while file_size > cfg["img_max_byte"] and quality > cfg["img_quality_reduce"]:
         reduction_ratio = cfg["img_max_byte"] / file_size
         quality = int(quality * reduction_ratio)
@@ -127,11 +129,8 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
         file_size = os.path.getsize(output_path)
     return output_path
 
-
-def upload_file(online_name, file_path):
-    """Uploads a file if it isn't already uploaded."""
-    
-    # check if the file is already uploaded
+def file_already_uploaded(online_name):
+    """Checks if a file is already uploaded."""
     try:
         result = cloudinary.Search().expression(online_name).max_results("1").execute()
         if result["total_count"] == 1:
@@ -139,8 +138,10 @@ def upload_file(online_name, file_path):
             return result["resources"][0]["secure_url"]
     except Exception as e:
         print(f"Error when checking if file exists: {e}")
-
-    # upload the file since it wasn't found in the cloud
+    
+    
+def upload_file(online_name, file_path):
+    """Uploads a file to the cloud and returns the URL"""
     print(f"{online_name} - uploading")
     try:
         result = cloudinary.uploader.upload(
@@ -158,48 +159,46 @@ def get_translated_name(adb_id):
     try:
         response = urlopen(arkhamdb_url + adb_id)
     except HTTPError as e:
-        print(f"Couldn't get translated name for ID: {adb_id} (HTTP {e.code})")
+        print(f"{adb_id} - couldn't get translated name (HTTP {e.code})")
         return "ERROR"
     except URLError as e:
-        print(f"Couldn't get translated name for ID: {adb_id} (URL {e.reason})")
+        print(f"{adb_id} - couldn't get translated name (URL {e.reason})")
         return "ERROR"
 
     try:
         data_json = json.loads(response.read())
     except json.JSONDecodeError:
-        print(f"Couldn't parse JSON for ID: {adb_id}")
+        print(f"{adb_id} - couldn't parse JSON")
         return "ERROR"
 
     try:
         return data_json["name"]
     except KeyError:
-        print(f"JSON for ID: {adb_id} did not contain 'name' key")
+        print(f"{adb_id} - JSON response did not contain 'name' key")
         return "ERROR"
 
 
-def escape_lua_file(file_path):
-    """Escapes the script from a Lua file to be included in JSON."""
+def get_lua_file(file_path):
+    """Gets the script from a Lua file to be included in JSON."""
     try:
-        with open(file_path, 'r') as file:
-            lua_str = file.read()
+        with open(file_path, 'r', encoding='utf-8') as file:
+            return file.read()
     except (FileNotFoundError, OSError) as e:
-        return str(e)
-
-    # Python's built-in functions can handle all required escape sequences
-    return json.dumps(lua_str)
+        raise IOError(f"Error reading Lua file: {e}")
 
 def find_back_url(adb_id):
     """Finds the URL of the sheet that has the cardbacks for the provided ID."""
     for _, data in sheet_parameters.items():
         if data["sheet_type"] == "back" and is_URL_contained(adb_id, data["start_id"], data["end_id"]):
-            if "uploaded_url" in data:
-                return data["uploaded_url"]
-            else:
-                raise ValueError("uploaded_url not found in sheet_parameters")
+            if "uploaded_url" not in data:
+                raise KeyError(f"uploaded_url not found in sheet_parameters")
+            return data["uploaded_url"]
+    raise KeyError(f"no matching back URL found")
+
 
 def is_URL_contained(adb_id, start_id, end_id):
     """Returns true if the ArkhamDB ID is part of this range."""
-    return sort_key(start_id) <= sort_key(adb_id) <= sort_key(end_id)
+    return sort_key((start_id,)) <= sort_key((adb_id,)) <= sort_key((end_id,))
 
 def process_cards(card_list, sheet_type):
     """Processes a list of cards and collects the data for the decksheet creation."""
@@ -295,6 +294,11 @@ cloudinary.config(
 # keep track of the deckIds that the missing URL was reported for
 reported_missing_url = {}
 
+# check if the folder exists
+if not os.path.exists(cfg["source_folder"]) or not os.path.isdir(cfg["source_folder"]):
+    print("The folder does not exist.")
+    sys.exit("Invalid folder")
+
 # process input files
 card_index = {}
 for current_path, directories, files in os.walk(cfg["source_folder"]):
@@ -363,43 +367,47 @@ for deck_id, data in sheet_parameters.items():
     if card_count < images_per_row:
         images_per_row = card_count
 
-    grid_size = (math.ceil(card_count / 10), images_per_row)
+    data["grid_size"] = (math.ceil(card_count / 10), images_per_row)
     online_name = f"Sheet{cfg["locale"].upper()}{data["start_id"]}-{data["end_id"]}"
     sheet_name = f"{online_name}.jpg"
 
-    print(f"{online_name} - creation")
-    sheet_path = create_decksheet(
-        data["img_path_list"],
-        grid_size,
-        cfg["img_w"],
-        cfg["img_h"],
-        os.path.join(temp_path, sheet_name),
-    )
-
-    data["uploaded_url"] = upload_file(online_name, sheet_path)
-    data["grid_size"] = grid_size
+    # check if file is already uploaded
+    result = file_already_uploaded(online_name)
+    
+    if result:
+        data["uploaded_url"] = result
+    else:
+        print(f"{online_name} - creation")
+        sheet_path = create_decksheet(
+            data["img_path_list"],
+            data["grid_size"],
+            cfg["img_w"],
+            cfg["img_h"],
+            os.path.join(temp_path, sheet_name),
+        )
+        data["uploaded_url"] = upload_file(online_name, sheet_path)
 
     if deck_id >= cfg["max_sheet_count"]:
         break
 
 # load the bag template and update it
-bag_name = "Translated Cards - " + cfg["locale"].upper()
+bag_name = "Translated Cards - " + cfg["locale"].upper() + " - " + os.path.basename(cfg["source_folder"])
 bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
 bag["ObjectStates"][0]["ContainedObjects"] = []
-bag["ObjectStates"][0]["LuaScript"] = escape_lua_file("TTSBagLuaScript.lua")
+bag["ObjectStates"][0]["LuaScript"] = get_lua_file("TTSBagLuaScript.lua")
 
 # loop cards and add them to bag
 print("Creating output file.")
 for adb_id, data in card_index.items():
     # skip card backs of double-sided cards
     if not adb_id.endswith('b'):
-        try:
-            card_json = get_card_json(adb_id, data)
+        card_json = get_card_json(adb_id, data)
+        if card_json:
             bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
-        except Exception as e:
-            print(f"{adb_id} - Error: {e}")
+        else:
+            print(f"{adb_id} - failed to get card JSON")
 
 # output the bag with translated cards
 bag_path = os.path.join(output_folder, f"{bag_name}.json")
