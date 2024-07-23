@@ -145,6 +145,10 @@ class App:
 
             # get path
             self.cfg["source_folder"] = self.source_folder_entry.get()
+            if not os.path.exists(self.cfg["source_folder"]) or not os.path.isdir(
+                self.cfg["source_folder"]
+            ):
+                raise ValueError("Source folder does not exist.")
 
             # get values from sliders
             self.cfg["img_quality"] = int(self.quality_slider.get())

@@ -1,4 +1,5 @@
 import copy
+from datetime import datetime
 import json
 import math
 import os
@@ -22,7 +23,7 @@ import cloudinary.uploader
 def load_json_file(file_name):
     """Opens a JSON file in the script_dir"""
     file_path = os.path.join(script_dir, file_name)
-    with open(file_path) as file:
+    with open(file_path, 'r', encoding='utf-8') as file:
         return json.load(file)
 
 
@@ -34,7 +35,7 @@ def get_card_json(adb_id, data):
     
     # Check if 'uploaded_url' exists in sheet_parameters
     if "uploaded_url" not in sheet_param:
-        if reported_missing_url.get(deck_id, False):
+        if not reported_missing_url.get(deck_id, False):
             print(f"Didn't find URL for sheet {deck_id}")
             reported_missing_url[deck_id] = True
         raise KeyError("uploaded_url not found in sheet_parameters")
@@ -49,15 +50,12 @@ def get_card_json(adb_id, data):
         back_url = player_card_back_url
     else:
         try:
-            back_url = find_back_url(adb_id)
+            back_url = get_back_url(adb_id)
         except KeyError as e:
-            if reported_missing_url.get(deck_id, False):
+            if not reported_missing_url.get(deck_id, False):
                 print(f"{adb_id} - {e}")
                 reported_missing_url[deck_id] = True
-            return None
-
-    # add random value to deck_id as a first measure against deck_id clashes
-    random_num = random.randint(1000, 3000) * 10
+            return
     
     new_card["GMNotes"] = adb_id
     new_card["Nickname"] = get_translated_name(adb_id)
@@ -129,17 +127,18 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
         file_size = os.path.getsize(output_path)
     return output_path
 
+
 def file_already_uploaded(online_name):
     """Checks if a file is already uploaded."""
     try:
-        result = cloudinary.Search().expression(online_name).max_results("1").execute()
+        result = cloudinary.Search().expression(f"filename={online_name}").max_results("1").execute()
         if result["total_count"] == 1:
             print(f"{online_name} - already uploaded")
             return result["resources"][0]["secure_url"]
     except Exception as e:
         print(f"Error when checking if file exists: {e}")
-    
-    
+
+
 def upload_file(online_name, file_path):
     """Uploads a file to the cloud and returns the URL"""
     print(f"{online_name} - uploading")
@@ -155,7 +154,12 @@ def upload_file(online_name, file_path):
 
 
 def get_translated_name(adb_id):
-    """Get the translated card name from ArkhamDB"""
+    """Get the translated card name from cache / ArkhamDB"""
+    global translation_cache
+    
+    if adb_id in translation_cache:
+        return translation_cache[adb_id]
+    
     try:
         response = urlopen(arkhamdb_url + adb_id)
     except HTTPError as e:
@@ -172,6 +176,7 @@ def get_translated_name(adb_id):
         return "ERROR"
 
     try:
+        translation_cache[adb_id] = data_json["name"]
         return data_json["name"]
     except KeyError:
         print(f"{adb_id} - JSON response did not contain 'name' key")
@@ -186,19 +191,29 @@ def get_lua_file(file_path):
     except (FileNotFoundError, OSError) as e:
         raise IOError(f"Error reading Lua file: {e}")
 
-def find_back_url(adb_id):
+
+def get_back_url(adb_id):
     """Finds the URL of the sheet that has the cardbacks for the provided ID."""
     for _, data in sheet_parameters.items():
         if data["sheet_type"] == "back" and is_URL_contained(adb_id, data["start_id"], data["end_id"]):
-            if "uploaded_url" not in data:
+            if "uploaded_url" in data:
+                return data["uploaded_url"]
+            else:
                 raise KeyError(f"uploaded_url not found in sheet_parameters")
-            return data["uploaded_url"]
     raise KeyError(f"no matching back URL found")
 
 
 def is_URL_contained(adb_id, start_id, end_id):
     """Returns true if the ArkhamDB ID is part of this range."""
-    return sort_key((start_id,)) <= sort_key((adb_id,)) <= sort_key((end_id,))
+    key1 = sort_key((start_id,))
+    key2 = sort_key((adb_id,))
+    key3 = sort_key((end_id,))
+    
+    # compare number parts (might need to update this once we have more variants of IDs, e.g. ..c, ..d)
+    if key1[0] == key2[0]:
+        return True
+    return key1 <= key2 <= key3
+
 
 def process_cards(card_list, sheet_type):
     """Processes a list of cards and collects the data for the decksheet creation."""
@@ -237,8 +252,8 @@ def process_cards(card_list, sheet_type):
     # Add end index for the last sheet
     if deck_id != 0:
         sheet_parameters[deck_id]["end_id"] = last_id
-        
-        
+
+
 def sort_key(item):
     """sort function for the card index"""
     key = item[0]
@@ -258,6 +273,13 @@ def sort_key(item):
         # fallback for any items that don't match the expected pattern
         return (key,)
     
+    
+def is_whitelisted(path):
+    """Checks if a folder path contains a whitelisted folder name"""
+    path_parts = path.split(os.sep)
+    return any(folder in path_parts for folder in whitelist)
+   
+ 
 # -----------------------------------------------------------
 # main script
 # -----------------------------------------------------------
@@ -281,8 +303,18 @@ output_folder = os.path.join(
 # probably don't need to change these
 player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
 bag_template = "TTSBagTemplate.json"
+translation_cache_file = f"translation_cache_{cfg["locale"].lower()}.json"
 arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
 script_dir = os.path.dirname(__file__)
+
+# create translation cache
+if os.path.exists(os.path.join(script_dir, translation_cache_file)):
+    translation_cache = load_json_file(translation_cache_file)
+else:
+    translation_cache = {}
+
+# whitelisted folder names (only supported card types)
+whitelist = ["PlayerCards", "Investigators"]  
 
 # cloudinary api settings
 cloudinary.config(
@@ -291,17 +323,17 @@ cloudinary.config(
     api_secret=cfg["api_secret"],
 )
 
+# add random value to deck_id as a first measure against deck_id clashes
+random_num = random.randint(1000, 3000) * 10
+
 # keep track of the deckIds that the missing URL was reported for
 reported_missing_url = {}
-
-# check if the folder exists
-if not os.path.exists(cfg["source_folder"]) or not os.path.isdir(cfg["source_folder"]):
-    print("The folder does not exist.")
-    sys.exit("Invalid folder")
 
 # process input files
 card_index = {}
 for current_path, directories, files in os.walk(cfg["source_folder"]):
+    if not is_whitelisted(current_path):
+        continue
     print(f"Processing folder: {current_path}")
     for file in files:
         try:
@@ -318,6 +350,9 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
             if face_id in card_index:
                 double_sided = True
                 card_index[face_id]["double_sided"] = True
+            else:
+                print(f"{adb_id} - didn't find front image")
+                continue
 
         # add card to index
         card_index[adb_id] = {
@@ -391,7 +426,7 @@ for deck_id, data in sheet_parameters.items():
         break
 
 # load the bag template and update it
-bag_name = "Translated Cards - " + cfg["locale"].upper() + " - " + os.path.basename(cfg["source_folder"])
+bag_name = f"{datetime.now().strftime("%Y-%m-%d")} Translated Cards - {cfg["locale"].upper()}"
 bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
@@ -414,6 +449,10 @@ bag_path = os.path.join(output_folder, f"{bag_name}.json")
 with open(bag_path, "w", encoding="utf8") as f:
     json.dump(bag, f, ensure_ascii=False, indent=2)
 print("Successfully created output file.")
+
+# save translation cache
+with open(os.path.join(script_dir, translation_cache_file), "w", encoding="utf8") as f:
+    json.dump(translation_cache, f, ensure_ascii=False, indent=2)
 
 # remove temp folder
 if not cfg["keep_temp_folder"] and os.path.exists(temp_path):
