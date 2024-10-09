@@ -25,22 +25,27 @@ function getMetadata()
     -- get the data for this ID from the AllCardsBag
     local cardData = bag.call("getCardById", { id = objData["GMNotes"] })
 
-    -- copy the main metadata: GMNotes
-    objData["GMNotes"] = JSON.encode(cardData.metadata)
+    if cardData then
+      -- copy the main metadata: GMNotes
+      objData["GMNotes"] = JSON.encode(cardData.metadata)
 
-    -- copy the secondary metadata: Tags
-    objData["Tags"] = cardData.data["Tags"]
+      -- copy the secondary metadata: Tags
+      objData["Tags"] = cardData.data["Tags"]
 
-    -- copy script and XML
-    objData["LuaScript"] = cardData.data["LuaScript"]
-    objData["XmlUI"] = cardData.data["XmlUI"]
+      -- copy script and XML
+      objData["LuaScript"] = cardData.data["LuaScript"]
+      objData["XmlUI"] = cardData.data["XmlUI"]
 
-    -- copy sideways card information
-    objData["SidewaysCard"] = cardData.data["SidewaysCard"]
+      -- copy sideways card information
+      objData["SidewaysCard"] = cardData.data["SidewaysCard"]
 
-    -- copy name if translated name couldn't be received
-    if objData["Nickname"] == "ERROR" then
-      objData["Nickname"] = cardData.data["Nickname"]
+      -- copy transform
+      objData["Transform"] = cardData.data["Transform"]
+
+      -- copy name if translated name couldn't be received
+      if objData["Nickname"] == "ERROR" then
+        objData["Nickname"] = cardData.data["Nickname"]
+      end
     end
   end
 
