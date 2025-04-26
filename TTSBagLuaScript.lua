@@ -23,7 +23,7 @@ function getMetadata()
   local data = self.getData()
   for _, objData in ipairs(data["ContainedObjects"] or {}) do
     -- get the data for this ID from the AllCardsBag
-    local cardData = bag.call("getCardById", { id = objData["GMNotes"] })
+    local cardData = bag.call("getCardById", { id = objData["GMNotes"]["id"] })
 
     if cardData then
       -- copy the main metadata: GMNotes
