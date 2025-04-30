@@ -4,7 +4,7 @@ function onLoad()
   self.addContextMenuItem("Add to index", addToIndex)
 end
 
--- main function: copies data from the existing cards
+-- main function: copies data from the existing cards, works only for player cards
 function getMetadata()
   local bag = getObjectFromGUID("15bb07")
   if not bag then
@@ -23,7 +23,7 @@ function getMetadata()
   local data = self.getData()
   for _, objData in ipairs(data["ContainedObjects"] or {}) do
     -- get the data for this ID from the AllCardsBag
-    local cardData = bag.call("getCardById", { id = objData["GMNotes"]["id"] })
+    local cardData = bag.call("getCardById", { id = JSON.decode(objData["GMNotes"])["id"] })
 
     if cardData then
       -- copy the main metadata: GMNotes

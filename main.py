@@ -159,6 +159,9 @@ def get_translated_name(adb_id):
     """Get the translated card name from cache / ArkhamDB"""
     global translation_cache
 
+    if adb_id.endswith('-t'):
+        adb_id = adb_id[:5]
+
     if adb_id in translation_cache:
         return translation_cache[adb_id]
 
@@ -226,7 +229,7 @@ def process_cards(card_list, sheet_type):
         # (either because img count per sheet is exhaste or because we are processing new sheet type)
         if (
             last_cycle_id == 0
-            or last_cycle_id != data["cycle_id"]
+            or (cfg["separate_by_cycle"] and last_cycle_id != data["cycle_id"])
             or card_id == (cfg["img_count_per_sheet"] - 1)
             or sheet_parameters[deck_id]["sheet_type"] != sheet_type
         ):

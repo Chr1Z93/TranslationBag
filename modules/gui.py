@@ -94,10 +94,18 @@ class App:
                 row=len(self.fields) + 5, column=1, padx=10, sticky=tk.W
             )
 
+        ttk.Label(self.root, text="Separate sheets by cycle id").grid(
+            row=len(self.fields) + 6, column=0, padx=10, sticky=tk.E
+        )
+        self.separate_by_cycle_var = tk.BooleanVar(value=True)
+        self.separate_by_cycle = tk.Checkbutton(variable=self.separate_by_cycle_var).grid(
+              row=len(self.fields) + 6, column=1, padx=10, sticky=tk.W
+            )
+
 
         # submit button
         self.submit_button = ttk.Button(self.root, text="Submit", command=self.submit)
-        self.submit_button.grid(row=len(self.fields) + 6, columnspan=3, pady=10)
+        self.submit_button.grid(row=len(self.fields) + 7, columnspan=3, pady=10)
 
         self.load_settings()
         self.start_app()
@@ -152,8 +160,9 @@ class App:
         self.output_folder_entry.insert(0, self.cfg.get("output_folder", ""))
 
         # load settings for checkboxes
-        self.keep_temp_folder_var.set(self.cfg["keep_temp_folder"])
-        self.dont_upload_var.set(self.cfg["dont_upload"])
+        self.keep_temp_folder_var.set(self.cfg.get("keep_temp_folder", True))
+        self.dont_upload_var.set(self.cfg.get("dont_upload", True))
+        self.separate_by_cycle_var.set(self.cfg.get("separate_by_cycle", True))
 
         # load settings for sliders and labels
         self.count_per_sheet_slider.set(self.cfg.get("img_count_per_sheet", 30))
@@ -203,6 +212,7 @@ class App:
             # get values from checkboxes
             self.cfg["keep_temp_folder"] = bool(self.keep_temp_folder_var.get())
             self.cfg["dont_upload"] = bool(self.dont_upload_var.get())
+            self.cfg["separate_by_cycle"] = bool(self.separate_by_cycle_var.get())
 
             # save settings
             with open("config.json", "w") as f:
