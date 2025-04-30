@@ -79,9 +79,10 @@ def get_arkhamdb_id(current_path, file):
     file_name = os.path.splitext(file)[0]
 
     # assume that file names with at least 5 digits are valid ArkhamDB IDs
-    if len(file_name) < 5:
+    digit_count = sum(c.isdigit() for c in file_name)
+    if digit_count < 5:
         # if filename isn't already a full adb_id, construct it from folder name + file name
-        zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
+        zero_count = 5 - len(folder_name) - digit_count
         if zero_count < 0:
             raise ValueError(f"Error getting ID for {os.path.join(current_path, file)}")
         return f"{folder_name}{'0'*zero_count}{file_name}"
@@ -108,7 +109,7 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
             print(f"Error opening image {img_path}")
             continue
 
-    # save the final grid image with initial quality cfg
+    # save the final grid image with initial qualit y cfg
     quality = cfg["img_quality"]
     grid_image.save(output_path, quality=quality, optimize=True)
 
@@ -282,10 +283,6 @@ def is_whitelisted(path):
     path_parts = path.split(os.sep)
     return any(folder in path_parts for folder in whitelist)
 
-def remove_temp_folder():
-    """Removes temp folder with created cardsheets"""
-    print("Removing temp folder.")
-    shutil.rmtree(temp_path)
 
 
 # -----------------------------------------------------------
@@ -478,4 +475,5 @@ with open(os.path.join(script_dir, translation_cache_file), "w", encoding="utf8"
 
 # remove temp folder
 if not cfg["keep_temp_folder"] and os.path.exists(temp_path):
-    remove_temp_folder()
+    print("Removing temp folder.")
+    shutil.rmtree(temp_path)
