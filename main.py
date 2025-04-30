@@ -109,7 +109,7 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
             print(f"Error opening image {img_path}")
             continue
 
-    # save the final grid image with initial qualit y cfg
+    # save the final grid image with initial quality cfg
     quality = cfg["img_quality"]
     grid_image.save(output_path, quality=quality, optimize=True)
 
