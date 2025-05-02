@@ -56,7 +56,7 @@ class App:
         )
         self.browse_output_button.grid(row=len(self.fields)+1, column=2, padx=10, pady=5)
         self.default_output_folder_button = ttk.Button(
-            self.root, text="Set to TTS Saved Objects", command=self.set_default_output_filder
+            self.root, text="Set to TTS Saved Objects", command=self.set_default_output_folder
         )
         self.default_output_folder_button.grid(row=len(self.fields)+1, column=3, padx=5, pady=5)
 
@@ -239,7 +239,7 @@ class App:
             self.output_folder_entry.delete(0, tk.END)
             self.output_folder_entry.insert(0, folder_selected)
 
-    def set_default_output_filder(self):
+    def set_default_output_folder(self):
         """Helper function to set output folder as default ('TTS/Saves/Saved Objects' folder)"""
         if sys.platform == "darwin":  # macOS
             base_folder = os.path.join(
