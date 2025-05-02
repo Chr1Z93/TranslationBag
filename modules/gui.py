@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
 import os
+import sys
 
 
 class App:
@@ -239,19 +240,33 @@ class App:
             self.output_folder_entry.insert(0, folder_selected)
 
     def set_default_output_filder(self):
-       """Helper function to set output folder as default ('TTS/Saves/Saved Objects' folder)"""
-       # TODO rework USERPROFILE to support *unix
-       output_folder = os.path.join(
-           os.environ["USERPROFILE"],
-           "Documents",
-           "My Games",
-           "Tabletop Simulator",
-           "Saves",
-           "Saved Objects"
-       )
+        """Helper function to set output folder as default ('TTS/Saves/Saved Objects' folder)"""
+        if sys.platform == "darwin":  # macOS
+            base_folder = os.path.join(
+                os.path.expanduser("~"),
+                "Library",
+            )
+        elif sys.platform == "linux":  # linux
+            base_folder = os.path.join(
+                os.path.expanduser("~"),
+                ".local",
+                "share"
+            )
+        else:  # windows
+            base_folder = os.path.join(
+                os.environ["USERPROFILE"],
+                "Documents",
+                "My Games",
+            )
+        output_folder = os.path.join(
+            f"{base_folder}",
+            "Tabletop Simulator",
+            "Saves",
+            "Saved Objects",
+        )
 
-       self.output_folder_entry.delete(0, tk.END)
-       self.output_folder_entry.insert(0, output_folder)
+        self.output_folder_entry.delete(0, tk.END)
+        self.output_folder_entry.insert(0, output_folder)
 
     def update_label(self, label, value, step=1):
         """Helper function to update the label of a slider to its value"""
