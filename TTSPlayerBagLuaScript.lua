@@ -1,10 +1,9 @@
 -- add context menu options
 function onLoad()
-  self.addContextMenuItem("Get metadata", getMetadata)
-  self.addContextMenuItem("Add to index", addToIndex)
+  createButtonByName("Apply")
 end
 
--- main function: copies data from the existing cards, works only for player cards
+-- main function: copies data from the existing cards
 function getMetadata()
   local bag = getObjectFromGUID("15bb07")
   if not bag then
@@ -14,7 +13,7 @@ function getMetadata()
 
   -- if the tag is already present, this function was executed before
   if self.hasTag("AllCardsHotfix") then
-    printToAll("Metadata was already updated!")
+    -- metadata was already updated, skip this step
     return
   end
 
@@ -66,4 +65,28 @@ function addToIndex()
 
   printToAll("Updating index.")
   bag.call("rebuildIndexForHotfix")
+end
+
+function createButtonByName(label)
+  local selfScale = self.getScale()
+
+  self.createButton({
+    label = label,
+    tooltip = "",
+    position = { 2.5, 0.5, 0 },
+    rotation = {0, -90, 0},
+    height = 500,
+    width = 1200,
+    font_size = 350,
+    font_color = { 1, 1, 1 },
+    function_owner = self,
+    color = { 0, 0, 0 },
+    scale = Vector(1 / selfScale.x, 1, 1 / selfScale.z),
+    click_function = "buttonClick_" .. string.lower(string.gsub(label, "%s+", ""))
+  })
+end
+
+function buttonClick_apply()
+  getMetadata()
+  addToIndex()
 end
