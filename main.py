@@ -196,10 +196,10 @@ def get_translated_name(adb_id):
         # IMPORTANT: have checked this on NotZ and DWL campaigns only, may return to this later, as scenario setups
         # differ from time to time.
         if data_json["type_code"] == "location" and data_json.get("back_name"):
-            translated_name = translation_cache[adb_id] = data_json["back_name"]
+            translation_cache[adb_id] = data_json["back_name"]
         else:
-            translated_name = translation_cache[adb_id] = data_json["name"]
-        return translated_name
+            translation_cache[adb_id] = data_json["name"]
+        return translation_cache[adb_id]
     except KeyError:
         print(f"{adb_id} - JSON response did not contain 'name' key")
         return "ERROR"
