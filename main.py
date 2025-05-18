@@ -34,7 +34,7 @@ def load_json_file(file_name):
         return json.load(file)
 
 
-def get_card_json(adb_id, data):
+def get_card_json(adb_id, data, index_type):
     """Create a JSON object for a card"""
     deck_id = data["deck_id"]
     card_id = data["card_id"]
@@ -54,7 +54,10 @@ def get_card_json(adb_id, data):
     h, w = sheet_param["grid_size"]
 
     if data["double_sided"] == False:
-        back_url = player_card_back_url
+        if index_type == IndexType.PLAYER:
+            back_url = player_card_back_url
+        elif index_type == IndexType.CAMPAIGN:
+            back_url = encounter_card_back_url
     else:
         try:
             back_url = get_back_url(sheet_param["uploaded_url"])
@@ -336,6 +339,7 @@ cfg = form.get_values()
 
 # probably don't need to change these
 player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
+encounter_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/"
 bag_template = "TTSBagTemplate.json"
 translation_cache_file = f"translation_cache_{cfg['locale'].lower()}.json"
 arkhamdb_url = f"https://{cfg['locale'].lower()}.arkhamdb.com/api/public/card/"
@@ -531,7 +535,7 @@ for bagInfo in bags:
     for adb_id, data in card_index.items():
         # skip card backs of double-sided cards
         if not adb_id.endswith('b'):
-            card_json = get_card_json(adb_id, data)
+            card_json = get_card_json(adb_id, data, bagInfo['index_type'])
             if card_json:
                 bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
             else:
