@@ -431,7 +431,9 @@ for key, cards in campaign_index.items():
     campaign_index[key] = dict(sorted(cards.items(), key=sort_key))
 
 # prepare bags, loop through indexes and collect data for decksheets
-bags = [prepare_bag(player_index, IndexType.PLAYER)]
+bags = []
+if len(player_index) != 0:
+    bags.append(prepare_bag(player_index, IndexType.PLAYER))
 for cycle_id, index in campaign_index.items():
     bag = prepare_bag(index, IndexType.CAMPAIGN)
     bag["cycle_id"] = cycle_id
