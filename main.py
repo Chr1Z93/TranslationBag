@@ -6,7 +6,6 @@ import os
 import random
 import re
 import shutil
-import constants
 
 from enum import Enum
 from PIL import Image
@@ -170,7 +169,7 @@ def get_translated_name(adb_id):
     global translation_cache
 
     if adb_id.endswith('-t'):
-        adb_id = adb_id[:5]
+        adb_id = adb_id[:-2]
 
     if adb_id in translation_cache:
         return translation_cache[adb_id]
@@ -314,7 +313,7 @@ def prepare_bag(index, index_type: IndexType):
     # separate single-sided and double-sided cards
     for adb_id, data in index.items():
         if data["double_sided"] == True:
-            if adb_id.endswith('b'):
+            if adb_id.endswith(card_back_suffix):
                 double_sided_cards_back.append((adb_id, data))
             else:
                 double_sided_cards_front.append((adb_id, data))
@@ -340,10 +339,23 @@ cfg = form.get_values()
 # probably don't need to change these
 player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
 encounter_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/"
+card_back_suffix = "-back"
 bag_template = "TTSBagTemplate.json"
 translation_cache_file = f"translation_cache_{cfg['locale'].lower()}.json"
 arkhamdb_url = f"https://{cfg['locale'].lower()}.arkhamdb.com/api/public/card/"
 script_dir = os.path.dirname(__file__)
+cycle_names = { # Using for bag names
+    "00": "Investigator Cards",
+    "01": "Core Set",
+    "02": "The Dunwich Legacy",
+    "03": "Path To Carcosa",
+    "81": "Curse of the Rougarou"
+}
+
+# Expansion campaigns require core set to be playable.
+# While assembling campaign bags, we check bag's cycle_id against this list,
+# if this list contains processed bag cycle_id - we add core set cards to the bag
+campaigns_with_core = ["02", "03"]
 
 # create translation cache
 if os.path.exists(os.path.join(script_dir, translation_cache_file)):
@@ -403,18 +415,14 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
         # check if a face for this card is already added to the index and mark it as double-sided
         # or check if the index contains back for this card and mark card being processed as double-sided
         double_sided = False
-        if adb_id.endswith('b'):
-            face_id = adb_id[:-1]
+        if adb_id.endswith(card_back_suffix):
+            face_id = adb_id[:-5]
             double_sided = True
 
             if face_id in card_index:
                 card_index[face_id]["double_sided"] = True
-            elif face_id+"a" in card_index:
-                card_index[face_id+"a"]["double_sided"] = True
-        elif adb_id.endswith('a'):
-            double_sided = True
         else:
-            back_id = adb_id + "b"
+            back_id = adb_id + card_back_suffix
             if back_id in card_index:
                 double_sided = True
 
@@ -521,7 +529,7 @@ for bagInfo in bags:
     bag_name = f"{datetime.now().strftime('%Y-%m-%d')}_SCED-lang_{cycle_str}_{cfg['locale'].upper()}"
     bag = load_json_file(bag_template)
     card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
-    bag["ObjectStates"][0]["Nickname"] = f"{constants.CYCLE_NAMES[cycle_str]}: {cfg['locale'].upper()} language pack"
+    bag["ObjectStates"][0]["Nickname"] = f"{cycle_names[cycle_str]}: {cfg['locale'].upper()} language pack"
     bag["ObjectStates"][0]["ContainedObjects"] = []
     if bagInfo["index_type"] == IndexType.PLAYER:
         bag["ObjectStates"][0]["LuaScript"] = get_lua_file("TTSPlayerBagLuaScript.lua")
@@ -536,7 +544,7 @@ for bagInfo in bags:
         card_index = campaign_index[bagInfo['cycle_id']]
     for adb_id, data in card_index.items():
         # skip card backs of double-sided cards
-        if not adb_id.endswith('b'):
+        if not adb_id.endswith(card_back_suffix):
             card_json = get_card_json(adb_id, data, bagInfo['index_type'])
             if card_json:
                 bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
@@ -544,7 +552,7 @@ for bagInfo in bags:
                 print(f"{adb_id} - failed to get card JSON")
     if cycle_str == "01":
         core_set_list = bag["ObjectStates"][0]["ContainedObjects"].copy()
-    if cycle_str in constants.CAMPAIGNS_WITH_CORE:
+    if cycle_str in campaigns_with_core:
         bag["ObjectStates"][0]["ContainedObjects"].extend(core_set_list)
 
     # output the bags with translated cards
