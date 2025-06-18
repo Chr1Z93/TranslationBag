@@ -190,18 +190,8 @@ def get_translated_name(adb_id):
         return "ERROR"
 
     try:
-        # Location cards in tts spawn face up, showing their unrevealed side, which considered card back by ArkhamDB.
-        # So in the case of locations, which have different names for their sides, we can get spoiled by tts tooltip,
-        # containing card revealed side name.
-        # Example: Back Hall Doorway cards in The Dunwich Legacy 'House Always Wins' scenario (card id 02077).
-        # To avoid that, we're fetching "back_name", if there is one, and processed card IS a location
-        # IMPORTANT: have checked this on NotZ and DWL campaigns only, may return to this later, as scenario setups
-        # differ from time to time.
-        if data_json["type_code"] == "location" and data_json.get("back_name"):
-            translation_cache[adb_id] = data_json["back_name"]
-        else:
-            translation_cache[adb_id] = data_json["name"]
-        return translation_cache[adb_id]
+        translation_cache[adb_id] = data_json["name"]
+        return data_json["name"]
     except KeyError:
         print(f"{adb_id} - JSON response did not contain 'name' key")
         return "ERROR"
