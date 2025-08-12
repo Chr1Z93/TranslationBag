@@ -113,7 +113,7 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
     file_size = os.path.getsize(output_path)
 
     # adjust quality until the file size is within the limit
-    while file_size > cfg["img_max_byte"] and quality > cfg["img_quality_reduce"]:
+    while file_size > cfg["img_max_byte"]:
         reduction_ratio = cfg["img_max_byte"] / file_size
         quality = int(quality * reduction_ratio)
         print(f"File too big ({file_size} B). Running again with quality = {quality} %")
@@ -143,7 +143,7 @@ def upload_file(online_name, file_path):
     try:
         result = cloudinary.uploader.upload(
             file_path,
-            folder=f"AH LCG - {cfg['locale'].upper()}",
+            folder=f"TEST AH LCG - {cfg['locale'].upper()}",
             public_id=online_name,
         )
         return result["secure_url"]
@@ -290,16 +290,6 @@ form = App()
 # get data from form
 cfg = form.get_values()
 
-# use TTS' saved objects folder as default output folder
-output_folder = os.path.join(
-    os.environ["USERPROFILE"],
-    "Documents",
-    "My Games",
-    "Tabletop Simulator",
-    "Saves",
-    "Saved Objects"
-)
-
 # probably don't need to change these
 player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
 card_back_suffix = "-back"
@@ -407,11 +397,22 @@ for deck_id, data in sheet_parameters.items():
     online_name = f"Sheet{cfg["locale"].upper()}{data["start_id"]}-{data["end_id"]}"
     sheet_name = f"{online_name}.jpg"
 
-    # check if file is already uploaded
-    result = file_already_uploaded(online_name)
-    
-    if result:
-        data["uploaded_url"] = result
+    if not cfg["dont_upload"]:
+        # check if file is already uploaded
+        result = file_already_uploaded(online_name)
+
+        if result:
+            data["uploaded_url"] = result
+        else:
+            print(f"{online_name} - creation")
+            sheet_path = create_decksheet(
+                data["img_path_list"],
+                data["grid_size"],
+                cfg["img_w"],
+                cfg["img_h"],
+                os.path.join(temp_path, sheet_name),
+            )
+            data["uploaded_url"] = upload_file(online_name, sheet_path)
     else:
         print(f"{online_name} - creation")
         sheet_path = create_decksheet(
@@ -421,7 +422,7 @@ for deck_id, data in sheet_parameters.items():
             cfg["img_h"],
             os.path.join(temp_path, sheet_name),
         )
-        data["uploaded_url"] = upload_file(online_name, sheet_path)
+        data["uploaded_url"] = sheet_path
 
     if deck_id >= cfg["max_sheet_count"]:
         break
@@ -446,10 +447,10 @@ for adb_id, data in card_index.items():
             print(f"{adb_id} - failed to get card JSON")
 
 # output the bag with translated cards
-bag_path = os.path.join(output_folder, f"{bag_name}.json")
+bag_path = os.path.join(cfg["output_folder"], f"{bag_name}.json")
 with open(bag_path, "w", encoding="utf8") as f:
     json.dump(bag, f, ensure_ascii=False, indent=2)
-print("Successfully created output file.")
+print(f"Successfully created output file at {bag_path}.")
 
 # save translation cache
 with open(os.path.join(script_dir, translation_cache_file), "w", encoding="utf8") as f:
