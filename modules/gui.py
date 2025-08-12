@@ -83,6 +83,10 @@ class App:
             length=135,
         )
         slider.grid(row=row, column=1, padx=10, pady=5)
+
+        # make sure the slider position matches the initial value
+        slider.set(label_text)
+
         label = ttk.Label(self.root, text=label_text)
         label.grid(row=row, column=2, padx=10, pady=5)
         slider["command"] = lambda value: command(label, value, step)

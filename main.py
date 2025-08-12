@@ -6,7 +6,6 @@ import os
 import random
 import re
 import shutil
-import sys
 from PIL import Image
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
@@ -16,7 +15,6 @@ from modules.gui import App
 
 # cloud service specifics
 import cloudinary
-import cloudinary.api
 import cloudinary.uploader
 
 
