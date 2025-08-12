@@ -154,7 +154,9 @@ def upload_file(online_name, file_path):
 def get_translated_name(adb_id):
     """Get the translated card name from cache / ArkhamDB"""
     global translation_cache
-    
+
+    if adb_id.endswith('-t'): # taboo card
+        adb_id = adb_id[:-2]
     if adb_id in translation_cache:
         return translation_cache[adb_id]
     
@@ -300,6 +302,7 @@ output_folder = os.path.join(
 
 # probably don't need to change these
 player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
+card_back_suffix = "-back"
 bag_template = "TTSBagTemplate.json"
 translation_cache_file = f"translation_cache_{cfg["locale"].lower()}.json"
 arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
@@ -342,8 +345,8 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
         
         # check if a face for this card is already added to the index and mark it as double-sided
         double_sided = False
-        if adb_id.endswith('b'):
-            face_id = adb_id[:-1]
+        if adb_id.endswith(card_back_suffix):
+            face_id = adb_id[:-5]
             
             if face_id in card_index:
                 double_sided = True
@@ -370,7 +373,7 @@ double_sided_cards_back = []
 # separate single-sided and double-sided cards
 for adb_id, data in card_index.items():
     if data["double_sided"] == True:
-        if adb_id.endswith('b'):
+        if adb_id.endswith(card_back_suffix):
             double_sided_cards_back.append((adb_id, data))
         else:
             double_sided_cards_front.append((adb_id, data))
@@ -435,7 +438,7 @@ bag["ObjectStates"][0]["LuaScript"] = get_lua_file("TTSBagLuaScript.lua")
 print("Creating output file.")
 for adb_id, data in card_index.items():
     # skip card backs of double-sided cards
-    if not adb_id.endswith('b'):
+    if not adb_id.endswith(card_back_suffix):
         card_json = get_card_json(adb_id, data)
         if card_json:
             bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
