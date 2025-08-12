@@ -143,7 +143,7 @@ def upload_file(online_name, file_path):
     try:
         result = cloudinary.uploader.upload(
             file_path,
-            folder=f"TEST AH LCG - {cfg['locale'].upper()}",
+            folder=f"AH LCG - {cfg['locale'].upper()}",
             public_id=online_name,
         )
         return result["secure_url"]
