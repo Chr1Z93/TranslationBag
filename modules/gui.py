@@ -55,10 +55,6 @@ class App:
             self.root, text="Browse", command=self.browse_output_folder
         )
         self.browse_output_button.grid(row=len(self.fields)+1, column=2, padx=10, pady=5)
-        self.default_output_folder_button = ttk.Button(
-            self.root, text="Set to TTS Saved Objects", command=self.set_default_output_folder
-        )
-        self.default_output_folder_button.grid(row=len(self.fields)+1, column=3, padx=5, pady=5)
 
 
 
@@ -153,7 +149,7 @@ class App:
         self.source_folder_entry.insert(0, self.cfg.get("source_folder", ""))
 
         # load settings for output folder
-        self.output_folder_entry.insert(0, self.cfg.get("output_folder", ""))
+        self.output_folder_entry.insert(0, self.cfg.get("output_folder", self.generate_default_output_path()))
 
         # load settings for checkboxes
         self.keep_temp_folder_var.set(self.cfg.get("keep_temp_folder", True))
@@ -232,8 +228,7 @@ class App:
             self.output_folder_entry.delete(0, tk.END)
             self.output_folder_entry.insert(0, folder_selected)
 
-    def set_default_output_folder(self):
-        """Helper function to set output folder as default ('TTS/Saves/Saved Objects' folder)"""
+    def generate_default_output_path(self):
         if sys.platform == "darwin":  # macOS
             base_folder = os.path.join(
                 os.path.expanduser("~"),
@@ -251,15 +246,17 @@ class App:
                 "Documents",
                 "My Games",
             )
-        output_folder = os.path.join(
+        return os.path.join(
             f"{base_folder}",
             "Tabletop Simulator",
             "Saves",
             "Saved Objects",
-        )
+        ).replace("\\", "/")
 
+    def set_default_output_folder(self):
+        """Helper function to set output folder as default ('TTS/Saves/Saved Objects' folder)"""
         self.output_folder_entry.delete(0, tk.END)
-        self.output_folder_entry.insert(0, output_folder)
+        self.output_folder_entry.insert(0, self.generate_default_output_path())
 
     def update_label(self, label, value, step=1):
         """Helper function to update the label of a slider to its value"""
