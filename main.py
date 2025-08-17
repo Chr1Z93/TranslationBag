@@ -113,7 +113,7 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
     file_size = os.path.getsize(output_path)
 
     # adjust quality until the file size is within the limit
-    while file_size > cfg["img_max_byte"]:
+    while file_size > cfg["img_max_byte"] and quality > cfg["img_quality_reduce"]:
         reduction_ratio = cfg["img_max_byte"] / file_size
         quality = int(quality * reduction_ratio)
         print(f"File too big ({file_size} B). Running again with quality = {quality} %")
