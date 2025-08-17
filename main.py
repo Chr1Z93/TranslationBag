@@ -21,7 +21,7 @@ import cloudinary.uploader
 def load_json_file(file_name):
     """Opens a JSON file in the script_dir"""
     file_path = os.path.join(script_dir, file_name)
-    with open(file_path, 'r', encoding='utf-8') as file:
+    with open(file_path, "r", encoding="utf-8") as file:
         return json.load(file)
 
 
@@ -30,20 +30,20 @@ def get_card_json(adb_id, data):
     deck_id = data["deck_id"]
     card_id = data["card_id"]
     sheet_param = sheet_parameters[deck_id]
-    
+
     # Check if 'uploaded_url' exists in sheet_parameters
     if "uploaded_url" not in sheet_param:
         if not reported_missing_url.get(deck_id, False):
             print(f"Didn't find URL for sheet {deck_id}")
             reported_missing_url[deck_id] = True
         raise KeyError("uploaded_url not found in sheet_parameters")
-    
+
     # create Json element
     new_card = copy.deepcopy(card_template)
-    
+
     # collect data for card
     h, w = sheet_param["grid_size"]
-    
+
     if data["double_sided"] == False:
         back_url = player_card_back_url
     else:
@@ -54,7 +54,7 @@ def get_card_json(adb_id, data):
                 print(f"{adb_id} - {e}")
                 reported_missing_url[deck_id] = True
             return
-    
+
     new_card["GMNotes"] = adb_id
     new_card["Nickname"] = get_translated_name(adb_id)
     new_card["CardID"] = f"{deck_id + random_num}{card_id:02}"
@@ -65,7 +65,7 @@ def get_card_json(adb_id, data):
         "NumHeight": h,
         "BackIsHidden": True,
         "UniqueBack": data["double_sided"],
-        "Type": 0
+        "Type": 0,
     }
     return new_card
 
@@ -74,7 +74,7 @@ def get_arkhamdb_id(current_path, file):
     """Constructs the ArkhamDB ID"""
     folder_name = os.path.basename(current_path)
     file_name = os.path.splitext(file)[0]
-        
+
     # assume that file names with at least 5 digits are valid ArkhamDB IDs
     if len(file_name) < 5:
         # if filename isn't already a full adb_id, construct it from folder name + file name
@@ -89,10 +89,10 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
     """Stitches the provided images together to deck sheet"""
     rows, cols = grid_size
 
-    # create a blank canvas for the grid
+    # Create a blank canvas for the grid
     grid_image = Image.new("RGB", (cols * img_w, rows * img_h))
 
-    # paste each image onto the canvas
+    # Paste each image onto the canvas
     for index, img_path in enumerate(img_path_list):
         try:
             with Image.open(img_path) as img:
@@ -105,23 +105,17 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
             print(f"Error opening image {img_path}")
             continue
 
-    # save the final grid image with initial quality cfg
+    # Save the final grid image with initial quality cfg
     quality = cfg["img_quality"]
     grid_image.save(output_path, quality=quality, optimize=True)
 
-    # check the file size
+    # Check the file size and adjust quality
     file_size = os.path.getsize(output_path)
 
-    # adjust quality until the file size is within the limit
-    while file_size > cfg["img_max_byte"] and quality > cfg["img_quality_reduce"]:
-        reduction_ratio = cfg["img_max_byte"] / file_size
-        quality = int(quality * reduction_ratio)
+    while file_size > cfg["img_max_byte"] and quality > 5:
+        quality -= 5
         print(f"File too big ({file_size} B). Running again with quality = {quality} %")
-        try:
-            grid_image.save(output_path, quality=quality, optimize=True)
-        except IOError:
-            print("Error saving image")
-            return None
+        grid_image.save(output_path, quality=quality, optimize=True)
         file_size = os.path.getsize(output_path)
     return output_path
 
@@ -129,7 +123,12 @@ def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
 def file_already_uploaded(online_name):
     """Checks if a file is already uploaded."""
     try:
-        result = cloudinary.Search().expression(f"filename={online_name}").max_results("1").execute()
+        result = (
+            cloudinary.Search()
+            .expression(f"filename={online_name}")
+            .max_results("1")
+            .execute()
+        )
         if result["total_count"] == 1:
             print(f"{online_name} - already uploaded")
             return result["resources"][0]["secure_url"]
@@ -155,11 +154,11 @@ def get_translated_name(adb_id):
     """Get the translated card name from cache / ArkhamDB"""
     global translation_cache
 
-    if adb_id.endswith('-t'): # taboo card
+    if adb_id.endswith("-t"):  # taboo card
         adb_id = adb_id[:-2]
     if adb_id in translation_cache:
         return translation_cache[adb_id]
-    
+
     try:
         response = urlopen(arkhamdb_url + adb_id)
     except HTTPError as e:
@@ -186,7 +185,7 @@ def get_translated_name(adb_id):
 def get_lua_file(file_path):
     """Gets the script from a Lua file to be included in JSON."""
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with open(file_path, "r", encoding="utf-8") as file:
             return file.read()
     except (FileNotFoundError, OSError) as e:
         raise IOError(f"Error reading Lua file: {e}")
@@ -195,7 +194,9 @@ def get_lua_file(file_path):
 def get_back_url(adb_id):
     """Finds the URL of the sheet that has the cardbacks for the provided ID."""
     for _, data in sheet_parameters.items():
-        if data["sheet_type"] == "back" and is_URL_contained(adb_id, data["start_id"], data["end_id"]):
+        if data["sheet_type"] == "back" and is_URL_contained(
+            adb_id, data["start_id"], data["end_id"]
+        ):
             if "uploaded_url" in data:
                 return data["uploaded_url"]
             else:
@@ -208,7 +209,7 @@ def is_URL_contained(adb_id, start_id, end_id):
     key1 = sort_key((start_id,))
     key2 = sort_key((adb_id,))
     key3 = sort_key((end_id,))
-    
+
     # compare number parts (might need to update this once we have more variants of IDs, e.g. ..c, ..d)
     if key1[0] == key2[0]:
         return True
@@ -234,7 +235,11 @@ def process_cards(card_list, sheet_type):
             card_id = 0
 
             # initialize dictionary
-            sheet_parameters[deck_id] = {"img_path_list": [], "start_id": adb_id, "sheet_type": sheet_type}
+            sheet_parameters[deck_id] = {
+                "img_path_list": [],
+                "start_id": adb_id,
+                "sheet_type": sheet_type,
+            }
         else:
             card_id += 1
 
@@ -244,7 +249,7 @@ def process_cards(card_list, sheet_type):
 
         # add image to list
         sheet_parameters[deck_id]["img_path_list"].append(data["file_path"])
-        
+
         # add data to sheet
         data["deck_id"] = deck_id
         data["card_id"] = card_id
@@ -257,16 +262,16 @@ def process_cards(card_list, sheet_type):
 def sort_key(item):
     """sort function for the card index"""
     key = item[0]
-    
+
     # regular expression to match the pattern
-    pattern = r'^(\d{5})([a-z])?(?:-([a-z]\d+))?$'
+    pattern = r"^(\d{5})([a-z])?(?:-([a-z]\d+))?$"
     match = re.match(pattern, key)
-    
+
     if match:
         number = match.group(1)  # 5-digit part
-        letter = match.group(2) or ''  # optional letter appendix
-        suffix = match.group(3) or ''  # optional suffix
-        
+        letter = match.group(2) or ""  # optional letter appendix
+        suffix = match.group(3) or ""  # optional suffix
+
         # return a tuple for sorting
         return (number, letter, suffix)
     else:
@@ -331,13 +336,13 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
             adb_id = get_arkhamdb_id(current_path, file)
         except Exception as e:
             print(f"{e}")
-            continue # skip this file because we don't have a proper ArkhamDB ID for it
-        
+            continue  # skip this file because we don't have a proper ArkhamDB ID for it
+
         # check if a face for this card is already added to the index and mark it as double-sided
         double_sided = False
         if adb_id.endswith(card_back_suffix):
             face_id = adb_id[:-5]
-            
+
             if face_id in card_index:
                 double_sided = True
                 card_index[face_id]["double_sided"] = True
@@ -349,7 +354,7 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
         card_index[adb_id] = {
             "cycle_id": int(adb_id[:2]),
             "file_path": os.path.join(current_path, file),
-            "double_sided": double_sided
+            "double_sided": double_sided,
         }
 
 # sort the card index (numbers first, than by letter appendix)
@@ -428,7 +433,9 @@ for deck_id, data in sheet_parameters.items():
         break
 
 # load the bag template and update it
-bag_name = f"{datetime.now().strftime("%Y-%m-%d")} Translated Cards - {cfg["locale"].upper()}"
+bag_name = (
+    f"{datetime.now().strftime("%Y-%m-%d")} Translated Cards - {cfg["locale"].upper()}"
+)
 bag = load_json_file(bag_template)
 card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
 bag["ObjectStates"][0]["Nickname"] = bag_name
