@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
 import os
+import sys
 
 
 class App:
@@ -40,13 +41,22 @@ class App:
         )
         self.source_folder_entry = ttk.Entry(self.root)
         self.source_folder_entry.grid(row=len(self.fields), column=1, padx=10, pady=5)
-        self.browse_button = ttk.Button(
+        self.browse_source_button = ttk.Button(
             self.root, text="Browse", command=self.browse_source_folder
         )
-        self.browse_button.grid(row=len(self.fields), column=2, padx=10, pady=5)
+        self.browse_source_button.grid(row=len(self.fields), column=2, padx=10, pady=5)
 
-        # checkbox for keeping the temp folder
-        self.keep_temp_folder_var = tk.BooleanVar()
+        ttk.Label(self.root, text="Bag Output Folder").grid(
+                    row=len(self.fields) + 1, column=0, padx=10, pady=5, sticky=tk.E
+                )
+        self.output_folder_entry = ttk.Entry(self.root)
+        self.output_folder_entry.grid(row=len(self.fields)+1, column=1, padx=10, pady=5)
+        self.browse_output_button = ttk.Button(
+            self.root, text="Browse", command=self.browse_output_folder
+        )
+        self.browse_output_button.grid(row=len(self.fields)+1, column=2, padx=10, pady=5)
+
+
 
         # sliders
         self.count_per_sheet_slider, self.count_per_sheet_label = self.create_slider(
@@ -63,9 +73,27 @@ class App:
             len(self.fields) + 3, "Image Quality", 1, 100, self.update_label, "90"
         )
 
+        # checkbox that disables uploading to cloud and checking uploaded sheets
+        ttk.Label(self.root, text="Do not upload sheets to cloud").grid(
+            row=len(self.fields) + 4, column=0, padx=10, sticky=tk.E
+        )
+        self.dont_upload_var = tk.BooleanVar(value=True)
+        self.dont_upload = tk.Checkbutton(variable=self.dont_upload_var).grid(
+                row=len(self.fields) + 4, column=1, padx=10, sticky=tk.W
+            )
+
+        # checkbox for keeping the temp folder
+        ttk.Label(self.root, text="Keep temp folder with cardsheets").grid(
+            row=len(self.fields) + 5, column=0, padx=10, sticky=tk.E
+        )
+        self.keep_temp_folder_var = tk.BooleanVar(value=True)
+        self.keep_temp_folder = tk.Checkbutton(variable=self.keep_temp_folder_var).grid(
+                row=len(self.fields) + 5, column=1, padx=10, sticky=tk.W
+            )
+
         # submit button
         self.submit_button = ttk.Button(self.root, text="Submit", command=self.submit)
-        self.submit_button.grid(row=len(self.fields) + 5, columnspan=3, pady=10)
+        self.submit_button.grid(row=len(self.fields) + 6, columnspan=3, pady=10)
 
         self.load_settings()
         self.start_app()
@@ -120,6 +148,13 @@ class App:
         # load settings for source folder
         self.source_folder_entry.insert(0, self.cfg.get("source_folder", ""))
 
+        # load settings for output folder
+        self.output_folder_entry.insert(0, self.cfg.get("output_folder", self.generate_default_output_path()))
+
+        # load settings for checkboxes
+        self.keep_temp_folder_var.set(self.cfg.get("keep_temp_folder", True))
+        self.dont_upload_var.set(self.cfg.get("dont_upload", True))
+
         # load settings for sliders and labels
         self.count_per_sheet_slider.set(self.cfg.get("img_count_per_sheet", 30))
         self.update_label(
@@ -147,18 +182,27 @@ class App:
                         f"Invalid input for '{field_name}'. Please enter a valid {expected_type.__name__}."
                     )
 
-            # get path
+            # get paths
             self.cfg["source_folder"] = self.source_folder_entry.get()
             if not os.path.exists(self.cfg["source_folder"]) or not os.path.isdir(
                 self.cfg["source_folder"]
             ):
                 raise ValueError("Source folder does not exist.")
+            self.cfg["output_folder"] = self.output_folder_entry.get()
+            if not os.path.exists(self.cfg["output_folder"]) or not os.path.isdir(
+                self.cfg["output_folder"]
+            ):
+                raise ValueError("Output folder does not exist.")
 
             # get values from sliders
             self.cfg["img_quality"] = int(self.quality_slider.get())
             self.cfg["img_count_per_sheet"] = (
                 round(self.count_per_sheet_slider.get() / 10) * 10
             )
+
+            # get values from checkboxes
+            self.cfg["keep_temp_folder"] = bool(self.keep_temp_folder_var.get())
+            self.cfg["dont_upload"] = bool(self.dont_upload_var.get())
 
             # save settings
             with open("config.json", "w") as f:
@@ -176,6 +220,43 @@ class App:
         if folder_selected:
             self.source_folder_entry.delete(0, tk.END)
             self.source_folder_entry.insert(0, folder_selected)
+
+    def browse_output_folder(self):
+        """Helper function for the browse button of the bag output folder field"""
+        folder_selected = filedialog.askdirectory()
+        if folder_selected:
+            self.output_folder_entry.delete(0, tk.END)
+            self.output_folder_entry.insert(0, folder_selected)
+
+    def generate_default_output_path(self):
+        if sys.platform == "darwin":  # macOS
+            base_folder = os.path.join(
+                os.path.expanduser("~"),
+                "Library",
+            )
+        elif sys.platform == "linux":  # linux
+            base_folder = os.path.join(
+                os.path.expanduser("~"),
+                ".local",
+                "share"
+            )
+        else:  # windows
+            base_folder = os.path.join(
+                os.environ["USERPROFILE"],
+                "Documents",
+                "My Games",
+            )
+        return os.path.join(
+            f"{base_folder}",
+            "Tabletop Simulator",
+            "Saves",
+            "Saved Objects",
+        ).replace("\\", "/")
+
+    def set_default_output_folder(self):
+        """Helper function to set output folder as default ('TTS/Saves/Saved Objects' folder)"""
+        self.output_folder_entry.delete(0, tk.END)
+        self.output_folder_entry.insert(0, self.generate_default_output_path())
 
     def update_label(self, label, value, step=1):
         """Helper function to update the label of a slider to its value"""
