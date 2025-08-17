@@ -272,14 +272,14 @@ def sort_key(item):
     else:
         # fallback for any items that don't match the expected pattern
         return (key,)
-    
-    
+
+
 def is_whitelisted(path):
     """Checks if a folder path contains a whitelisted folder name"""
     path_parts = path.split(os.sep)
     return any(folder in path_parts for folder in whitelist)
-   
- 
+
+
 # -----------------------------------------------------------
 # main script
 # -----------------------------------------------------------
@@ -305,7 +305,7 @@ else:
     translation_cache = {}
 
 # whitelisted folder names (only supported card types)
-whitelist = ["PlayerCards", "Investigators"]  
+whitelist = ["PlayerCards", "Investigators"]
 
 # cloudinary api settings
 cloudinary.config(
@@ -352,7 +352,7 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
             "double_sided": double_sided
         }
 
-# sort the card index (numbers first, than by letter appendix)    
+# sort the card index (numbers first, than by letter appendix)
 card_index = dict(sorted(card_index.items(), key=sort_key))
 
 # loop through index and collect data for decksheets
