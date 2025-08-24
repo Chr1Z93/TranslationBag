@@ -19,10 +19,6 @@ from modules.gui import App
 import cloudinary
 import cloudinary.uploader
 
-class IndexType(Enum):
-    PLAYER = 1
-    CAMPAIGN = 2
-
 def load_json_file(file_name):
     """Opens a JSON file in the script_dir"""
     file_path = os.path.join(script_dir, file_name)
@@ -50,9 +46,9 @@ def get_card_json(adb_id, data, index_type):
     h, w = sheet_param["grid_size"]
 
     if data["double_sided"] == False:
-        if index_type == IndexType.PLAYER:
+        if index_type == player_index:
             back_url = player_card_back_url
-        elif index_type == IndexType.CAMPAIGN:
+        elif index_type == encounter_index:
             back_url = encounter_card_back_url
     else:
         try:
@@ -302,7 +298,7 @@ def fetch_index_type_from_path(path):
             return card_types_dict[folder]
     raise IOError("No whitelisted folder in processed path")
 
-def prepare_bag(index, index_type: IndexType):
+def prepare_bag(index, index_type):
     """Process cards in index and return bag info with said cards"""
     single_sided_cards = []
     double_sided_cards_front = []
@@ -340,6 +336,8 @@ encounter_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/234250377
 card_back_suffix = "-back"
 bag_template = "TTSBagTemplate.json"
 bag_script = "TTSBagLuaScript.lua"
+player_index = "PlayerCards"
+encounter_index = "EncounterCards"
 translation_cache_file = f"translation_cache_{cfg["locale"].lower()}.json"
 arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
 script_dir = os.path.dirname(__file__)
@@ -367,9 +365,9 @@ else:
 
 # whitelisted folder names and their corresponded card type
 card_types_dict = {
-    "PlayerCards":      IndexType.PLAYER,
-    "Investigators":    IndexType.PLAYER,
-    "EncounterCards":   IndexType.CAMPAIGN
+    "PlayerCards":      player_index,
+    "Investigators":    player_index,
+    "EncounterCards":   encounter_index
 }
 whitelist = card_types_dict.keys()
 
@@ -406,9 +404,9 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
 
         # determine index to add card to
         index_type = fetch_index_type_from_path(current_path)
-        if index_type == IndexType.PLAYER:
+        if index_type == player_index:
             card_index = player_index
-        elif index_type == IndexType.CAMPAIGN:
+        elif index_type == encounter_index:
             cycle_id = int(adb_id[:2])
             card_index = campaign_index.setdefault(cycle_id, {})
         else:
@@ -443,9 +441,9 @@ for key, cards in campaign_index.items():
 # prepare bags, loop through indexes and collect data for decksheets
 bags = []
 if len(player_index) != 0:
-    bags.append(prepare_bag(player_index, IndexType.PLAYER))
+    bags.append(prepare_bag(player_index, player_index))
 for cycle_id, index in campaign_index.items():
-    bag = prepare_bag(index, IndexType.CAMPAIGN)
+    bag = prepare_bag(index, encounter_index)
     bag["cycle_id"] = cycle_id
     bags.append(bag)
 
@@ -473,7 +471,7 @@ os.mkdir(temp_path)
 last_cycle_id, last_id, card_id, deck_id = 0, 0, 0, 0
 sheet_parameters = {}
 for bagInfo in bags:
-    separate_by_cycle = bagInfo["index_type"] == IndexType.CAMPAIGN
+    separate_by_cycle = bagInfo["index_type"] == encounter_index
     process_cards(bagInfo["single_sided_cards"], "single")
     process_cards(bagInfo["double_sided_cards_front"], "front")
     process_cards(bagInfo["double_sided_cards_back"], "back")
@@ -534,7 +532,7 @@ for bagInfo in bags:
 
     # loop cards and add them to bag
     print("Creating output file.")
-    if bagInfo['index_type'] == IndexType.PLAYER:
+    if bagInfo['index_type'] == player_index:
         card_index = player_index
     else:
         card_index = campaign_index[bagInfo['cycle_id']]
