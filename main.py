@@ -6,11 +6,9 @@ import os
 import random
 import re
 import shutil
-from enum import Enum
 
 from PIL import Image
-from urllib.request import urlopen
-from urllib.error import URLError, HTTPError
+from urllib.request import urlopen, Request
 
 # import from subfolder 'modules'
 from modules.gui import App
@@ -46,9 +44,9 @@ def get_card_json(adb_id, data, index_type):
     h, w = sheet_param["grid_size"]
 
     if data["double_sided"] == False:
-        if index_type == player_index:
+        if index_type == player_index_name:
             back_url = player_card_back_url
-        elif index_type == encounter_index:
+        elif index_type == encounter_index_name:
             back_url = encounter_card_back_url
     else:
         try:
@@ -156,35 +154,16 @@ def upload_file(online_name, file_path):
 
 
 def get_translated_name(adb_id):
-    """Get the translated card name from cache / ArkhamDB"""
-    global translation_cache
+    """Get the translated card name from dict, gotten from ArkhamDB"""
+    global localized_nicknames_dict
 
     if adb_id.endswith("-t"):  # taboo card
         adb_id = adb_id[:-2]
-    if adb_id in translation_cache:
-        return translation_cache[adb_id]
-
-    try:
-        response = urlopen(arkhamdb_url + adb_id)
-    except HTTPError as e:
-        print(f"{adb_id} - couldn't get translated name (HTTP {e.code})")
-        return "ERROR"
-    except URLError as e:
-        print(f"{adb_id} - couldn't get translated name (URL {e.reason})")
+    if adb_id not in localized_nicknames_dict:
+        print(f"{adb_id} - couldn't get neither translated nor real name")
         return "ERROR"
 
-    try:
-        data_json = json.loads(response.read())
-    except json.JSONDecodeError:
-        print(f"{adb_id} - couldn't parse JSON")
-        return "ERROR"
-
-    try:
-        translation_cache[adb_id] = data_json["name"]
-        return data_json["name"]
-    except KeyError:
-        print(f"{adb_id} - JSON response did not contain 'name' key")
-        return "ERROR"
+    return localized_nicknames_dict[adb_id]
 
 
 def get_lua_file(file_path):
@@ -319,6 +298,21 @@ def prepare_bag(index, index_type):
             "double_sided_cards_front": double_sided_cards_front,
             "double_sided_cards_back": double_sided_cards_back}
 
+def fetch_translated_card_names(url):
+    print("Fetching translated card names...")
+    response = urlopen(Request(url, headers={'User-Agent': 'forbidden knowledge'})) # getting 403 without fake header
+
+    json_data = json.loads(response.read())
+    if not json_data['data']:
+        raise IOError("Can't fetch translated card names from API")
+
+    result_dict = {}
+    translated_card_count = 0
+    untranslated_card_count = 0
+    for card in json_data['data']['all_card']:
+        result_dict[card['code']] = card.get('name') or card.get("real_name")
+    return result_dict
+
 
 # -----------------------------------------------------------
 # main script
@@ -336,38 +330,19 @@ encounter_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/234250377
 card_back_suffix = "-back"
 bag_template = "TTSBagTemplate.json"
 bag_script = "TTSBagLuaScript.lua"
-player_index = "PlayerCards"
-encounter_index = "EncounterCards"
-translation_cache_file = f"translation_cache_{cfg["locale"].lower()}.json"
+player_index_name = "PlayerCards"
+encounter_index_name = "EncounterCards"
 arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
+cards_api_url = f"https://api.arkham.build/v1/cache/cards/{cfg["locale"].lower()}"
 script_dir = os.path.dirname(__file__)
-cycle_names = { # Using for bag names
-    "00": "Investigator Cards",
-    "01": "Core Set",
-    "02": "The Dunwich Legacy",
-    "03": "Path To Carcosa",
-    "04": "The Forgotten Age",
-    "05": "Circle Undone",
-    "06": "The Dream-Eaters",
-    "07": "The Innsmouth Conspiracy",
-    "08": "Edge of the Earth",
-    "09": "Scarlet Keys",
-    "10": "The Feast of Hemlock Vale",
-    "11": "The Drowned City",
-    "81": "Curse of the Rougarou"
-}
 
-# create translation cache
-if os.path.exists(os.path.join(script_dir, translation_cache_file)):
-    translation_cache = load_json_file(translation_cache_file)
-else:
-    translation_cache = {}
+localized_nicknames_dict = fetch_translated_card_names(cards_api_url)
 
 # whitelisted folder names and their corresponded card type
 card_types_dict = {
-    "PlayerCards":      player_index,
-    "Investigators":    player_index,
-    "EncounterCards":   encounter_index
+    "PlayerCards":      player_index_name,
+    "Investigators":    player_index_name,
+    "EncounterCards":   encounter_index_name
 }
 whitelist = card_types_dict.keys()
 
@@ -404,9 +379,9 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
 
         # determine index to add card to
         index_type = fetch_index_type_from_path(current_path)
-        if index_type == player_index:
+        if index_type == player_index_name:
             card_index = player_index
-        elif index_type == encounter_index:
+        elif index_type == encounter_index_name:
             cycle_id = int(adb_id[:2])
             card_index = campaign_index.setdefault(cycle_id, {})
         else:
@@ -441,16 +416,16 @@ for key, cards in campaign_index.items():
 # prepare bags, loop through indexes and collect data for decksheets
 bags = []
 if len(player_index) != 0:
-    bags.append(prepare_bag(player_index, player_index))
+    bags.append(prepare_bag(player_index, player_index_name))
 for cycle_id, index in campaign_index.items():
-    bag = prepare_bag(index, encounter_index)
+    bag = prepare_bag(index, encounter_index_name)
     bag["cycle_id"] = cycle_id
     bags.append(bag)
 
 for bag in bags:
     # log number of cards in each bag and check for inconsistencies in number of double-sided cards
     print(f"Cycle Id: {bag.get('cycle_id')}") if "cycle_id" in bag else 0
-    print(f"Type: {bag.get('index_type').name}")
+    print(f"Type: {bag.get('index_type')}")
     print(f"Single: {len(bag.get('single_sided_cards'))}")
     print(f"Front Double: {len(bag.get('double_sided_cards_front'))}")
     print(f"Back Double: {len(bag.get('double_sided_cards_back'))}")
@@ -471,7 +446,7 @@ os.mkdir(temp_path)
 last_cycle_id, last_id, card_id, deck_id = 0, 0, 0, 0
 sheet_parameters = {}
 for bagInfo in bags:
-    separate_by_cycle = bagInfo["index_type"] == encounter_index
+    separate_by_cycle = bagInfo["index_type"] == encounter_index_name
     process_cards(bagInfo["single_sided_cards"], "single")
     process_cards(bagInfo["double_sided_cards_front"], "front")
     process_cards(bagInfo["double_sided_cards_back"], "back")
@@ -526,13 +501,13 @@ for bagInfo in bags:
     bag_name = f"{datetime.now().strftime('%Y-%m-%d')}_SCED-lang_{cycle_str}_{cfg['locale'].upper()}"
     bag = load_json_file(bag_template)
     card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
-    bag["ObjectStates"][0]["Nickname"] = f"{cycle_names.get(cycle_str, cycle_str)}: {cfg['locale'].upper()} language pack"
+    bag["ObjectStates"][0]["Nickname"] = f"{bag_name} language pack"
     bag["ObjectStates"][0]["ContainedObjects"] = []
     bag["ObjectStates"][0]["LuaScript"] = get_lua_file(bag_script)
 
     # loop cards and add them to bag
     print("Creating output file.")
-    if bagInfo['index_type'] == player_index:
+    if bagInfo['index_type'] == player_index_name:
         card_index = player_index
     else:
         card_index = campaign_index[bagInfo['cycle_id']]
@@ -550,10 +525,6 @@ for bagInfo in bags:
     with open(bag_path, "w", encoding="utf8") as f:
         json.dump(bag, f, ensure_ascii=False, indent=2)
     print(f"Successfully created output file at {bag_path}.")
-
-# save translation cache
-with open(os.path.join(script_dir, translation_cache_file), "w", encoding="utf8") as f:
-    json.dump(translation_cache, f, ensure_ascii=False, indent=2)
 
 # remove temp folder
 if not cfg["keep_temp_folder"] and os.path.exists(temp_path):
