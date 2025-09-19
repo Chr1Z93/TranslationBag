@@ -6,9 +6,9 @@ import os
 import random
 import re
 import shutil
+
 from PIL import Image
-from urllib.request import urlopen
-from urllib.error import URLError, HTTPError
+from urllib.request import urlopen, Request
 
 # import from subfolder 'modules'
 from modules.gui import App
@@ -17,7 +17,6 @@ from modules.gui import App
 import cloudinary
 import cloudinary.uploader
 
-
 def load_json_file(file_name):
     """Opens a JSON file in the script_dir"""
     file_path = os.path.join(script_dir, file_name)
@@ -25,7 +24,7 @@ def load_json_file(file_name):
         return json.load(file)
 
 
-def get_card_json(adb_id, data):
+def get_card_json(adb_id, data, index_type):
     """Create a JSON object for a card"""
     deck_id = data["deck_id"]
     card_id = data["card_id"]
@@ -45,17 +44,20 @@ def get_card_json(adb_id, data):
     h, w = sheet_param["grid_size"]
 
     if data["double_sided"] == False:
-        back_url = player_card_back_url
+        if index_type == player_index_name:
+            back_url = player_card_back_url
+        elif index_type == encounter_index_name:
+            back_url = encounter_card_back_url
     else:
         try:
-            back_url = get_back_url(adb_id)
+            back_url = get_back_url(sheet_param["uploaded_url"])
         except KeyError as e:
             if not reported_missing_url.get(deck_id, False):
                 print(f"{adb_id} - {e}")
                 reported_missing_url[deck_id] = True
             return
 
-    new_card["GMNotes"] = adb_id
+    new_card["GMNotes"] = json.dumps({"id": adb_id})
     new_card["Nickname"] = get_translated_name(adb_id)
     new_card["CardID"] = f"{deck_id + random_num}{card_id:02}"
     new_card["CustomDeck"][f"{deck_id + random_num}"] = {
@@ -76,9 +78,10 @@ def get_arkhamdb_id(current_path, file):
     file_name = os.path.splitext(file)[0]
 
     # assume that file names with at least 5 digits are valid ArkhamDB IDs
-    if len(file_name) < 5:
+    digit_count = sum(c.isdigit() for c in file_name)
+    if digit_count < 5:
         # if filename isn't already a full adb_id, construct it from folder name + file name
-        zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
+        zero_count = 5 - len(folder_name) - digit_count
         if zero_count < 0:
             raise ValueError(f"Error getting ID for {os.path.join(current_path, file)}")
         return f"{folder_name}{'0'*zero_count}{file_name}"
@@ -151,35 +154,16 @@ def upload_file(online_name, file_path):
 
 
 def get_translated_name(adb_id):
-    """Get the translated card name from cache / ArkhamDB"""
-    global translation_cache
+    """Get the translated card name from dict, gotten from ArkhamDB"""
+    global localized_nicknames_dict
 
     if adb_id.endswith("-t"):  # taboo card
         adb_id = adb_id[:-2]
-    if adb_id in translation_cache:
-        return translation_cache[adb_id]
-
-    try:
-        response = urlopen(arkhamdb_url + adb_id)
-    except HTTPError as e:
-        print(f"{adb_id} - couldn't get translated name (HTTP {e.code})")
-        return "ERROR"
-    except URLError as e:
-        print(f"{adb_id} - couldn't get translated name (URL {e.reason})")
+    if adb_id not in localized_nicknames_dict:
+        print(f"{adb_id} - couldn't get neither translated nor real name")
         return "ERROR"
 
-    try:
-        data_json = json.loads(response.read())
-    except json.JSONDecodeError:
-        print(f"{adb_id} - couldn't parse JSON")
-        return "ERROR"
-
-    try:
-        translation_cache[adb_id] = data_json["name"]
-        return data_json["name"]
-    except KeyError:
-        print(f"{adb_id} - JSON response did not contain 'name' key")
-        return "ERROR"
+    return localized_nicknames_dict[adb_id]
 
 
 def get_lua_file(file_path):
@@ -191,12 +175,10 @@ def get_lua_file(file_path):
         raise IOError(f"Error reading Lua file: {e}")
 
 
-def get_back_url(adb_id):
-    """Finds the URL of the sheet that has the cardbacks for the provided ID."""
+def get_back_url(sheet_url):
+    """Finds the URL of the sheet that has the cardbacks for the provided sheet."""
     for _, data in sheet_parameters.items():
-        if data["sheet_type"] == "back" and is_URL_contained(
-            adb_id, data["start_id"], data["end_id"]
-        ):
+        if data["sheet_type"] == "back" and data["start_id"][:5] in sheet_url and data["end_id"][:5] in sheet_url:
             if "uploaded_url" in data:
                 return data["uploaded_url"]
             else:
@@ -218,14 +200,16 @@ def is_URL_contained(adb_id, start_id, end_id):
 
 def process_cards(card_list, sheet_type):
     """Processes a list of cards and collects the data for the decksheet creation."""
-    global last_cycle_id, last_id, card_id, deck_id, sheet_parameters
+    global last_cycle_id, last_id, card_id, deck_id, sheet_parameters, separate_by_cycle
 
     for adb_id, data in card_list:
         # we're just starting out or got to a new cycle or have to start a new sheet
+        # either because img count per sheet is exceeded or because we are processing new sheet type
         if (
             last_cycle_id == 0
-            or last_cycle_id != data["cycle_id"]
+            or (separate_by_cycle and last_cycle_id != data["cycle_id"])
             or card_id == (cfg["img_count_per_sheet"] - 1)
+            or sheet_parameters[deck_id]["sheet_type"] != sheet_type
         ):
             # add end index to last parameter
             if deck_id != 0:
@@ -284,6 +268,51 @@ def is_whitelisted(path):
     path_parts = path.split(os.sep)
     return any(folder in path_parts for folder in whitelist)
 
+def fetch_index_type_from_path(path):
+    """Return index card type based on dirpath"""
+    path_parts = path.split(os.sep)
+    # reversed(path_parts) cause we want to check index type against deepest folder in path
+    for folder in reversed(path_parts):
+        if folder in card_types_dict:
+            return card_types_dict[folder]
+    raise IOError("No whitelisted folder in processed path")
+
+def prepare_bag(index, index_type):
+    """Process cards in index and return bag info with said cards"""
+    single_sided_cards = []
+    double_sided_cards_front = []
+    double_sided_cards_back = []
+
+    # separate single-sided and double-sided cards
+    for adb_id, data in index.items():
+        if data["double_sided"]:
+            if adb_id.endswith(card_back_suffix):
+                double_sided_cards_back.append((adb_id, data))
+            else:
+                double_sided_cards_front.append((adb_id, data))
+        else:
+            single_sided_cards.append((adb_id, data))
+
+    return {"index_type": index_type,
+            "single_sided_cards": single_sided_cards,
+            "double_sided_cards_front": double_sided_cards_front,
+            "double_sided_cards_back": double_sided_cards_back}
+
+def fetch_translated_card_names(url):
+    print("Fetching translated card names...")
+    response = urlopen(Request(url, headers={'User-Agent': 'forbidden knowledge'})) # getting 403 without fake header
+
+    json_data = json.loads(response.read())
+    if not json_data['data']:
+        raise IOError("Can't fetch translated card names from API")
+
+    result_dict = {}
+    translated_card_count = 0
+    untranslated_card_count = 0
+    for card in json_data['data']['all_card']:
+        result_dict[card['code']] = card.get('name') or card.get("real_name")
+    return result_dict
+
 
 # -----------------------------------------------------------
 # main script
@@ -297,20 +326,25 @@ cfg = form.get_values()
 
 # probably don't need to change these
 player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
+encounter_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/"
 card_back_suffix = "-back"
 bag_template = "TTSBagTemplate.json"
-translation_cache_file = f"translation_cache_{cfg["locale"].lower()}.json"
+bag_script = "TTSBagLuaScript.lua"
+player_index_name = "PlayerCards"
+encounter_index_name = "EncounterCards"
 arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
+cards_api_url = f"https://api.arkham.build/v1/cache/cards/{cfg["locale"].lower()}"
 script_dir = os.path.dirname(__file__)
 
-# create translation cache
-if os.path.exists(os.path.join(script_dir, translation_cache_file)):
-    translation_cache = load_json_file(translation_cache_file)
-else:
-    translation_cache = {}
+localized_nicknames_dict = fetch_translated_card_names(cards_api_url)
 
-# whitelisted folder names (only supported card types)
-whitelist = ["PlayerCards", "Investigators"]
+# whitelisted folder names and their corresponded card type
+card_types_dict = {
+    "PlayerCards":      player_index_name,
+    "Investigators":    player_index_name,
+    "EncounterCards":   encounter_index_name
+}
+whitelist = card_types_dict.keys()
 
 # cloudinary api settings
 cloudinary.config(
@@ -325,8 +359,13 @@ random_num = random.randint(1000, 3000) * 10
 # keep track of the deckIds that the missing URL was reported for
 reported_missing_url = {}
 
+# creating indexes
+# player_index - one dict, investigators and investigator cards, resulting in one bag
+# campaign_index - dict of dicts, encounter/act/agenda cards, separated by cycle id, resulting in one bag per cycle
+player_index = {}
+campaign_index = {}
+
 # process input files
-card_index = {}
 for current_path, directories, files in os.walk(cfg["source_folder"]):
     if not is_whitelisted(current_path):
         continue
@@ -338,17 +377,29 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
             print(f"{e}")
             continue  # skip this file because we don't have a proper ArkhamDB ID for it
 
+        # determine index to add card to
+        index_type = fetch_index_type_from_path(current_path)
+        if index_type == player_index_name:
+            card_index = player_index
+        elif index_type == encounter_index_name:
+            cycle_id = int(adb_id[:2])
+            card_index = campaign_index.setdefault(cycle_id, {})
+        else:
+            raise ValueError(f"Undefined index type {index_type}")
+
         # check if a face for this card is already added to the index and mark it as double-sided
+        # or check if the index contains back for this card and mark card being processed as double-sided
         double_sided = False
         if adb_id.endswith(card_back_suffix):
             face_id = adb_id[:-5]
+            double_sided = True
 
             if face_id in card_index:
-                double_sided = True
                 card_index[face_id]["double_sided"] = True
-            else:
-                print(f"{adb_id} - didn't find front image")
-                continue
+        else:
+            back_id = adb_id + card_back_suffix
+            if back_id in card_index:
+                double_sided = True
 
         # add card to index
         card_index[adb_id] = {
@@ -357,37 +408,48 @@ for current_path, directories, files in os.walk(cfg["source_folder"]):
             "double_sided": double_sided,
         }
 
-# sort the card index (numbers first, than by letter appendix)
-card_index = dict(sorted(card_index.items(), key=sort_key))
+# sort the indexes (numbers first, than by letter appendix)
+player_index = dict(sorted(player_index.items(), key=sort_key))
+for key, cards in campaign_index.items():
+    campaign_index[key] = dict(sorted(cards.items(), key=sort_key))
 
-# loop through index and collect data for decksheets
-single_sided_cards = []
-double_sided_cards_front = []
-double_sided_cards_back = []
+# prepare bags, loop through indexes and collect data for decksheets
+bags = []
+if len(player_index) != 0:
+    bags.append(prepare_bag(player_index, player_index_name))
+for cycle_id, index in campaign_index.items():
+    bag = prepare_bag(index, encounter_index_name)
+    bag["cycle_id"] = cycle_id
+    bags.append(bag)
 
-# separate single-sided and double-sided cards
-for adb_id, data in card_index.items():
-    if data["double_sided"] == True:
-        if adb_id.endswith(card_back_suffix):
-            double_sided_cards_back.append((adb_id, data))
-        else:
-            double_sided_cards_front.append((adb_id, data))
-    else:
-        single_sided_cards.append((adb_id, data))
+for bag in bags:
+    # log number of cards in each bag and check for inconsistencies in number of double-sided cards
+    print(f"Cycle Id: {bag.get('cycle_id')}") if "cycle_id" in bag else 0
+    print(f"Type: {bag.get('index_type')}")
+    print(f"Single: {len(bag.get('single_sided_cards'))}")
+    print(f"Front Double: {len(bag.get('double_sided_cards_front'))}")
+    print(f"Back Double: {len(bag.get('double_sided_cards_back'))}")
+    print(f"Total indexed: {len(bag.get('single_sided_cards')) + len(bag.get('double_sided_cards_front'))}")
+    print("-"*80)
 
-# process cards
-last_cycle_id, last_id, card_id, deck_id = 0, 0, 0, 0
-sheet_parameters = {}
-
-process_cards(single_sided_cards, "single")
-process_cards(double_sided_cards_front, "front")
-process_cards(double_sided_cards_back, "back")
+    if len(bag['double_sided_cards_front']) != len(bag['double_sided_cards_back']):
+        print("Error: Number of fronts is not equal to the number of card backs!\nExiting app...")
+        exit()
 
 # create temp folder for decksheets
 temp_path = os.path.join(script_dir, "temp")
 if os.path.exists(temp_path):
     shutil.rmtree(temp_path)
 os.mkdir(temp_path)
+
+# process cards inside each bag
+last_cycle_id, last_id, card_id, deck_id = 0, 0, 0, 0
+sheet_parameters = {}
+for bagInfo in bags:
+    separate_by_cycle = bagInfo["index_type"] == encounter_index_name
+    process_cards(bagInfo["single_sided_cards"], "single")
+    process_cards(bagInfo["double_sided_cards_front"], "front")
+    process_cards(bagInfo["double_sided_cards_back"], "back")
 
 # create decksheets with previously collected information
 for deck_id, data in sheet_parameters.items():
@@ -430,38 +492,39 @@ for deck_id, data in sheet_parameters.items():
         data["uploaded_url"] = sheet_path
 
     if deck_id >= cfg["max_sheet_count"]:
+        print("Max sheet count exceeded! No new decksheets will be created.")
         break
 
-# load the bag template and update it
-bag_name = (
-    f"{datetime.now().strftime("%Y-%m-%d")} Translated Cards - {cfg["locale"].upper()}"
-)
-bag = load_json_file(bag_template)
-card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
-bag["ObjectStates"][0]["Nickname"] = bag_name
-bag["ObjectStates"][0]["ContainedObjects"] = []
-bag["ObjectStates"][0]["LuaScript"] = get_lua_file("TTSBagLuaScript.lua")
+for bagInfo in bags:
+    # load the bag template and update it
+    cycle_str = str(bagInfo.get('cycle_id', 0)).zfill(2)
+    bag_name = f"{datetime.now().strftime('%Y-%m-%d')}_SCED-lang_{cycle_str}_{cfg['locale'].upper()}"
+    bag = load_json_file(bag_template)
+    card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
+    bag["ObjectStates"][0]["Nickname"] = f"{bag_name} language pack"
+    bag["ObjectStates"][0]["ContainedObjects"] = []
+    bag["ObjectStates"][0]["LuaScript"] = get_lua_file(bag_script)
 
-# loop cards and add them to bag
-print("Creating output file.")
-for adb_id, data in card_index.items():
-    # skip card backs of double-sided cards
-    if not adb_id.endswith(card_back_suffix):
-        card_json = get_card_json(adb_id, data)
-        if card_json:
-            bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
-        else:
-            print(f"{adb_id} - failed to get card JSON")
+    # loop cards and add them to bag
+    print("Creating output file.")
+    if bagInfo['index_type'] == player_index_name:
+        card_index = player_index
+    else:
+        card_index = campaign_index[bagInfo['cycle_id']]
+    for adb_id, data in card_index.items():
+        # skip card backs of double-sided cards
+        if not adb_id.endswith(card_back_suffix):
+            card_json = get_card_json(adb_id, data, bagInfo['index_type'])
+            if card_json:
+                bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
+            else:
+                print(f"{adb_id} - failed to get card JSON")
 
-# output the bag with translated cards
-bag_path = os.path.join(cfg["output_folder"], f"{bag_name}.json")
-with open(bag_path, "w", encoding="utf8") as f:
-    json.dump(bag, f, ensure_ascii=False, indent=2)
-print(f"Successfully created output file at {bag_path}.")
-
-# save translation cache
-with open(os.path.join(script_dir, translation_cache_file), "w", encoding="utf8") as f:
-    json.dump(translation_cache, f, ensure_ascii=False, indent=2)
+    # output the bags with translated cards
+    bag_path = os.path.join(cfg["output_folder"], f"{bag_name}.json")
+    with open(bag_path, "w", encoding="utf8") as f:
+        json.dump(bag, f, ensure_ascii=False, indent=2)
+    print(f"Successfully created output file at {bag_path}.")
 
 # remove temp folder
 if not cfg["keep_temp_folder"] and os.path.exists(temp_path):
