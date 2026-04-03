@@ -19,23 +19,12 @@
     {
       "Name": "Bag",
       "Transform": {
-        "posX": 0,
-        "posY": 0,
-        "posZ": 0,
-        "rotX": 0,
-        "rotY": 0,
-        "rotZ": 0,
+        "rotY": 270,
         "scaleX": 1,
         "scaleY": 1,
         "scaleZ": 1
       },
       "Nickname": "Translation Bag - Template",
-      "Description": "Requires Arkham Horror LCG SCE 3.9.0+  !",
-      "AltLookAngle": {
-        "x": 0,
-        "y": 0,
-        "z": 0
-      },
       "ColorDiffuse": {
         "r": 0.7,
         "g": 0.35,
@@ -64,28 +53,13 @@
         {
           "Name": "Card",
           "Transform": {
-            "posX": 0,
-            "posY": 0,
-            "posZ": 0,
-            "rotX": 0,
             "rotY": 270,
-            "rotZ": 0,
             "scaleX": 1,
             "scaleY": 1,
             "scaleZ": 1
           },
           "Nickname": "CardName",
           "Description": "",
-          "AltLookAngle": {
-            "x": 0,
-            "y": 0,
-            "z": 0
-          },
-          "ColorDiffuse": {
-            "r": 0.7,
-            "g": 0.7,
-            "b": 0.7
-          },
           "Tags": [],
           "LayoutGroupSortIndex": 0,
           "Value": 0,
@@ -101,7 +75,7 @@
           "GridProjection": false,
           "HideWhenFaceDown": true,
           "Hands": true,
-          "CardID": 12300,
+          "CardID": 100,
           "SidewaysCard": false,
           "CustomDeck": {}
         }

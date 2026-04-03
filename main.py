@@ -1,469 +1,347 @@
 import copy
-from datetime import datetime
 import json
 import math
 import os
 import random
 import re
 import shutil
+from datetime import datetime
+import requests
+from concurrent.futures import ThreadPoolExecutor
+
 from PIL import Image
-from urllib.request import urlopen
-from urllib.error import URLError, HTTPError
-
-# import from subfolder 'modules'
-from modules.gui import App
-
-# cloud service specifics
 import cloudinary
 import cloudinary.uploader
 
-
-def load_json_file(file_name):
-    """Opens a JSON file in the script_dir"""
-    file_path = os.path.join(script_dir, file_name)
-    with open(file_path, "r", encoding="utf-8") as file:
-        return json.load(file)
+# Local module import
+from modules.gui import App
 
 
-def get_card_json(adb_id, data):
-    """Create a JSON object for a card"""
-    deck_id = data["deck_id"]
-    card_id = data["card_id"]
-    sheet_param = sheet_parameters[deck_id]
+class TTSBundleProcessor:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.script_dir = os.path.dirname(__file__)
+        self.temp_path = os.path.join(self.script_dir, "temp")
 
-    # Check if 'uploaded_url' exists in sheet_parameters
-    if "uploaded_url" not in sheet_param:
-        if not reported_missing_url.get(deck_id, False):
-            print(f"Didn't find URL for sheet {deck_id}")
-            reported_missing_url[deck_id] = True
-        raise KeyError("uploaded_url not found in sheet_parameters")
+        # Constants & Configuration
+        locale = self.cfg["locale"].lower()
+        self.PLAYER_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
+        self.WHITELIST = ["PlayerCards"]
+        self.BACK_SUFFIX = "-back"
+        self.ARKHAM_BUILD_URL = f"https://api.arkham.build/v1/cache/cards/{locale}"
 
-    # create Json element
-    new_card = copy.deepcopy(card_template)
+        # State Management
+        self.card_index = {}
+        self.sheet_parameters = {}
+        self.reported_missing_url = {}
+        self.deck_id_counter = 0
+        self.random_offset = random.randint(1000, 3000) * 10
+        self.translation_data = {}
 
-    # collect data for card
-    h, w = sheet_param["grid_size"]
+        # Initialize Cloudinary
+        cloudinary.config(
+            cloud_name=self.cfg["cloud_name"],
+            api_key=self.cfg["api_key"],
+            api_secret=self.cfg["api_secret"],
+        )
 
-    if data["double_sided"] == False:
-        back_url = player_card_back_url
-    else:
+    def load_translation_data(self):
         try:
-            back_url = get_back_url(adb_id)
-        except KeyError as e:
-            if not reported_missing_url.get(deck_id, False):
-                print(f"{adb_id} - {e}")
-                reported_missing_url[deck_id] = True
-            return
+            response = requests.get(self.ARKHAM_BUILD_URL)
+            response.raise_for_status()
 
-    new_card["GMNotes"] = adb_id
-    new_card["Nickname"] = get_translated_name(adb_id)
-    new_card["CardID"] = f"{deck_id + random_num}{card_id:02}"
-    new_card["CustomDeck"][f"{deck_id + random_num}"] = {
-        "FaceURL": sheet_param["uploaded_url"],
-        "BackURL": back_url,
-        "NumWidth": w,
-        "NumHeight": h,
-        "BackIsHidden": True,
-        "UniqueBack": data["double_sided"],
-        "Type": 0,
-    }
-    return new_card
+            # Create a lookup map
+            for item in response.json()["data"]["all_card"]:
+                if "name" in item:
+                    key = item["id"]
+                    self.translation_data[key] = item["name"]
 
+        except Exception as e:
+            print(f"Error fetching translation data: {e}")
 
-def get_arkhamdb_id(current_path, file):
-    """Constructs the ArkhamDB ID"""
-    folder_name = os.path.basename(current_path)
-    file_name = os.path.splitext(file)[0]
+    def _load_json(self, path, default=None):
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return default if default is not None else {}
 
-    # assume that file names with at least 5 digits are valid ArkhamDB IDs
-    if len(file_name) < 5:
-        # if filename isn't already a full adb_id, construct it from folder name + file name
-        zero_count = 5 - len(folder_name) - sum(c.isdigit() for c in file_name)
+    def _save_json(self, data, path):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def get_arkhamdb_id(self, folder_path, file_name):
+        base_name = os.path.splitext(file_name)[0]
+        if len(base_name) >= 5:
+            return base_name
+
+        folder_name = os.path.basename(folder_path)
+
+        # Calculate padding: 5 total digits - folder name length - existing digits in filename
+        digits_in_file = sum(c.isdigit() for c in base_name)
+        zero_count = 5 - len(folder_name) - digits_in_file
         if zero_count < 0:
-            raise ValueError(f"Error getting ID for {os.path.join(current_path, file)}")
-        return f"{folder_name}{'0'*zero_count}{file_name}"
-    return file_name
+            raise ValueError(f"Invalid ID construction for {file_name}")
+        return f"{folder_name}{'0' * zero_count}{base_name}"
 
-
-def create_decksheet(img_path_list, grid_size, img_w, img_h, output_path):
-    """Stitches the provided images together to deck sheet"""
-    rows, cols = grid_size
-
-    # Create a blank canvas for the grid
-    grid_image = Image.new("RGB", (cols * img_w, rows * img_h))
-
-    # Paste each image onto the canvas
-    for index, img_path in enumerate(img_path_list):
-        try:
-            with Image.open(img_path) as img:
-                img = img.resize((img_w, img_h))
-                row = index // cols
-                col = index % cols
-                position = (col * img_w, row * img_h)
-                grid_image.paste(img, position)
-        except IOError:
-            print(f"Error opening image {img_path}")
-            continue
-
-    # Save the final grid image with initial quality cfg
-    quality = cfg["img_quality"]
-    grid_image.save(output_path, quality=quality, optimize=True)
-
-    # Check the file size and adjust quality
-    file_size = os.path.getsize(output_path)
-
-    while file_size > cfg["img_max_byte"] and quality > 5:
-        quality -= 5
-        print(f"File too big ({file_size} B). Running again with quality = {quality} %")
-        grid_image.save(output_path, quality=quality, optimize=True)
-        file_size = os.path.getsize(output_path)
-    return output_path
-
-
-def file_already_uploaded(online_name):
-    """Checks if a file is already uploaded."""
-    try:
-        result = (
-            cloudinary.Search()
-            .expression(f"filename={online_name}")
-            .max_results("1")
-            .execute()
-        )
-        if result["total_count"] == 1:
-            print(f"{online_name} - already uploaded")
-            return result["resources"][0]["secure_url"]
-    except Exception as e:
-        print(f"Error when checking if file exists: {e}")
-
-
-def upload_file(online_name, file_path):
-    """Uploads a file to the cloud and returns the URL"""
-    print(f"{online_name} - uploading")
-    try:
-        result = cloudinary.uploader.upload(
-            file_path,
-            folder=f"AH LCG - {cfg['locale'].upper()}",
-            public_id=online_name,
-        )
-        return result["secure_url"]
-    except Exception as e:
-        print(f"Error when uploading file: {e}")
-
-
-def get_translated_name(adb_id):
-    """Get the translated card name from cache / ArkhamDB"""
-    global translation_cache
-
-    if adb_id.endswith("-t"):  # taboo card
-        adb_id = adb_id[:-2]
-    if adb_id in translation_cache:
-        return translation_cache[adb_id]
-
-    try:
-        response = urlopen(arkhamdb_url + adb_id)
-    except HTTPError as e:
-        print(f"{adb_id} - couldn't get translated name (HTTP {e.code})")
-        return "ERROR"
-    except URLError as e:
-        print(f"{adb_id} - couldn't get translated name (URL {e.reason})")
-        return "ERROR"
-
-    try:
-        data_json = json.loads(response.read())
-    except json.JSONDecodeError:
-        print(f"{adb_id} - couldn't parse JSON")
-        return "ERROR"
-
-    try:
-        translation_cache[adb_id] = data_json["name"]
-        return data_json["name"]
-    except KeyError:
-        print(f"{adb_id} - JSON response did not contain 'name' key")
-        return "ERROR"
-
-
-def get_lua_file(file_path):
-    """Gets the script from a Lua file to be included in JSON."""
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            return file.read()
-    except (FileNotFoundError, OSError) as e:
-        raise IOError(f"Error reading Lua file: {e}")
-
-
-def get_back_url(adb_id):
-    """Finds the URL of the sheet that has the cardbacks for the provided ID."""
-    for _, data in sheet_parameters.items():
-        if data["sheet_type"] == "back" and is_URL_contained(
-            adb_id, data["start_id"], data["end_id"]
-        ):
-            if "uploaded_url" in data:
-                return data["uploaded_url"]
-            else:
-                raise KeyError(f"uploaded_url not found in sheet_parameters")
-    raise KeyError(f"no matching back URL found")
-
-
-def is_URL_contained(adb_id, start_id, end_id):
-    """Returns true if the ArkhamDB ID is part of this range."""
-    key1 = sort_key((start_id,))
-    key2 = sort_key((adb_id,))
-    key3 = sort_key((end_id,))
-
-    # compare number parts (might need to update this once we have more variants of IDs, e.g. ..c, ..d)
-    if key1[0] == key2[0]:
-        return True
-    return key1 <= key2 <= key3
-
-
-def process_cards(card_list, sheet_type):
-    """Processes a list of cards and collects the data for the decksheet creation."""
-    global last_cycle_id, last_id, card_id, deck_id, sheet_parameters
-
-    for adb_id, data in card_list:
-        # we're just starting out or got to a new cycle or have to start a new sheet
-        if (
-            last_cycle_id == 0
-            or last_cycle_id != data["cycle_id"]
-            or card_id == (cfg["img_count_per_sheet"] - 1)
-        ):
-            # add end index to last parameter
-            if deck_id != 0:
-                sheet_parameters[deck_id]["end_id"] = last_id
-
-            deck_id += 1
-            card_id = 0
-
-            # initialize dictionary
-            sheet_parameters[deck_id] = {
-                "img_path_list": [],
-                "start_id": adb_id,
-                "sheet_type": sheet_type,
-            }
-        else:
-            card_id += 1
-
-        # store information for next iteration
-        last_cycle_id = data["cycle_id"]
-        last_id = adb_id
-
-        # add image to list
-        sheet_parameters[deck_id]["img_path_list"].append(data["file_path"])
-
-        # add data to sheet
-        data["deck_id"] = deck_id
-        data["card_id"] = card_id
-
-    # Add end index for the last sheet
-    if deck_id != 0:
-        sheet_parameters[deck_id]["end_id"] = last_id
-
-
-def sort_key(item):
-    """sort function for the card index"""
-    key = item[0]
-
-    # regular expression to match the pattern
-    pattern = r"^(\d{5})([a-z])?(?:-([a-z]\d+))?$"
-    match = re.match(pattern, key)
-
-    if match:
-        number = match.group(1)  # 5-digit part
-        letter = match.group(2) or ""  # optional letter appendix
-        suffix = match.group(3) or ""  # optional suffix
-
-        # return a tuple for sorting
-        return (number, letter, suffix)
-    else:
-        # fallback for any items that don't match the expected pattern
+    def sort_key(self, item):
+        key = item[0]
+        pattern = r"^(\d{5})([a-z])?(?:-([a-z]\d+))?$"
+        match = re.match(pattern, key)
+        if match:
+            return (match.group(1), match.group(2) or "", match.group(3) or "")
         return (key,)
 
-
-def is_whitelisted(path):
-    """Checks if a folder path contains a whitelisted folder name"""
-    path_parts = path.split(os.sep)
-    return any(folder in path_parts for folder in whitelist)
-
-
-# -----------------------------------------------------------
-# main script
-# -----------------------------------------------------------
-
-# open the main window to collect data
-form = App()
-
-# get data from form
-cfg = form.get_values()
-
-# probably don't need to change these
-player_card_back_url = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
-card_back_suffix = "-back"
-bag_template = "TTSBagTemplate.json"
-translation_cache_file = f"translation_cache_{cfg["locale"].lower()}.json"
-arkhamdb_url = f"https://{cfg["locale"].lower()}.arkhamdb.com/api/public/card/"
-script_dir = os.path.dirname(__file__)
-
-# create translation cache
-if os.path.exists(os.path.join(script_dir, translation_cache_file)):
-    translation_cache = load_json_file(translation_cache_file)
-else:
-    translation_cache = {}
-
-# whitelisted folder names (only supported card types)
-whitelist = ["PlayerCards", "Investigators"]
-
-# cloudinary api settings
-cloudinary.config(
-    cloud_name=cfg["cloud_name"],
-    api_key=cfg["api_key"],
-    api_secret=cfg["api_secret"],
-)
-
-# add random value to deck_id as a first measure against deck_id clashes
-random_num = random.randint(1000, 3000) * 10
-
-# keep track of the deckIds that the missing URL was reported for
-reported_missing_url = {}
-
-# process input files
-card_index = {}
-for current_path, directories, files in os.walk(cfg["source_folder"]):
-    if not is_whitelisted(current_path):
-        continue
-    print(f"Processing folder: {current_path}")
-    for file in files:
-        try:
-            adb_id = get_arkhamdb_id(current_path, file)
-        except Exception as e:
-            print(f"{e}")
-            continue  # skip this file because we don't have a proper ArkhamDB ID for it
-
-        # check if a face for this card is already added to the index and mark it as double-sided
-        double_sided = False
-        if adb_id.endswith(card_back_suffix):
-            face_id = adb_id[:-5]
-
-            if face_id in card_index:
-                double_sided = True
-                card_index[face_id]["double_sided"] = True
-            else:
-                print(f"{adb_id} - didn't find front image")
+    def scan_source(self):
+        """Walks the directory and builds the initial card index."""
+        print(f"Scanning: {self.cfg['source_folder']}")
+        for root, _, files in os.walk(self.cfg["source_folder"]):
+            path_parts = root.split(os.sep)
+            if not any(folder in path_parts for folder in self.WHITELIST):
                 continue
 
-        # add card to index
-        card_index[adb_id] = {
-            "cycle_id": int(adb_id[:2]),
-            "file_path": os.path.join(current_path, file),
-            "double_sided": double_sided,
+            for file in files:
+                if not file.lower().endswith((".png", ".jpg", ".jpeg")):
+                    continue
+                try:
+                    adb_id = self.get_arkhamdb_id(root, file)
+                    is_back = adb_id.endswith(self.BACK_SUFFIX)
+                    actual_id = adb_id[:-5] if is_back else adb_id
+
+                    if is_back and actual_id in self.card_index:
+                        self.card_index[actual_id]["double_sided"] = True
+
+                    self.card_index[adb_id] = {
+                        "cycle_id": int(adb_id[:2]),
+                        "file_path": os.path.join(root, file),
+                        "double_sided": is_back,  # Will be updated for fronts in sorting phase
+                    }
+                except Exception as e:
+                    print(f"Skip {file}: {e}")
+
+        # Finalize double-sided status for fronts
+        for adb_id in self.card_index:
+            if f"{adb_id}{self.BACK_SUFFIX}" in self.card_index:
+                self.card_index[adb_id]["double_sided"] = True
+
+    def organize_sheets(self):
+        """Groups cards into sheet batches based on cycle and double-sided status."""
+        sorted_cards = sorted(self.card_index.items(), key=self.sort_key)
+
+        batches = {
+            "single": [c for c in sorted_cards if not c[1]["double_sided"]],
+            "front": [
+                c
+                for c in sorted_cards
+                if c[1]["double_sided"] and not c[0].endswith(self.BACK_SUFFIX)
+            ],
+            "back": [
+                c
+                for c in sorted_cards
+                if c[1]["double_sided"] and c[0].endswith(self.BACK_SUFFIX)
+            ],
         }
 
-# sort the card index (numbers first, than by letter appendix)
-card_index = dict(sorted(card_index.items(), key=sort_key))
+        for sheet_type, card_list in batches.items():
+            last_cycle = None
+            current_batch = []
 
-# loop through index and collect data for decksheets
-single_sided_cards = []
-double_sided_cards_front = []
-double_sided_cards_back = []
+            for adb_id, data in card_list:
+                # Start new sheet if cycle changes OR sheet is full
+                if (last_cycle is not None and data["cycle_id"] != last_cycle) or len(
+                    current_batch
+                ) >= self.cfg["img_count_per_sheet"]:
+                    self._create_sheet_param(current_batch, sheet_type)
+                    current_batch = []
 
-# separate single-sided and double-sided cards
-for adb_id, data in card_index.items():
-    if data["double_sided"] == True:
-        if adb_id.endswith(card_back_suffix):
-            double_sided_cards_back.append((adb_id, data))
-        else:
-            double_sided_cards_front.append((adb_id, data))
-    else:
-        single_sided_cards.append((adb_id, data))
+                data["card_id"] = len(current_batch)
+                data["deck_id"] = self.deck_id_counter + 1  # Preview ID
+                current_batch.append((adb_id, data))
+                last_cycle = data["cycle_id"]
 
-# process cards
-last_cycle_id, last_id, card_id, deck_id = 0, 0, 0, 0
-sheet_parameters = {}
+            if current_batch:
+                self._create_sheet_param(current_batch, sheet_type)
 
-process_cards(single_sided_cards, "single")
-process_cards(double_sided_cards_front, "front")
-process_cards(double_sided_cards_back, "back")
+    def _create_sheet_param(self, batch, sheet_type):
+        self.deck_id_counter += 1
+        self.sheet_parameters[self.deck_id_counter] = {
+            "img_path_list": [d["file_path"] for _, d in batch],
+            "start_id": batch[0][0],
+            "end_id": batch[-1][0],
+            "sheet_type": sheet_type,
+            "card_count": len(batch),
+        }
 
-# create temp folder for decksheets
-temp_path = os.path.join(script_dir, "temp")
-if os.path.exists(temp_path):
-    shutil.rmtree(temp_path)
-os.mkdir(temp_path)
+    def _load_and_resize_card(self, args):
+        """Helper for parallel processing"""
+        path, img_w, img_h = args
+        try:
+            with Image.open(path) as img:
+                return img.resize((img_w, img_h), Image.Resampling.LANCZOS).convert(
+                    "RGB"
+                )
+        except Exception as e:
+            print(f"Error loading {path}: {e}")
+            return Image.new("RGB", (img_w, img_h), (255, 0, 0))  # Red error card
 
-# create decksheets with previously collected information
-for deck_id, data in sheet_parameters.items():
-    card_count = len(data["img_path_list"])
-    images_per_row = 10
+    def process_images(self):
+        """Stitches images and handles uploading."""
+        if os.path.exists(self.temp_path):
+            shutil.rmtree(self.temp_path)
+        os.makedirs(self.temp_path)
 
-    # if there is just a single row of images, shrink the grid
-    if card_count < images_per_row:
-        images_per_row = card_count
+        img_w, img_h = self.cfg["img_w"], self.cfg["img_h"]
 
-    data["grid_size"] = (math.ceil(card_count / 10), images_per_row)
-    online_name = f"Sheet{cfg["locale"].upper()}{data["start_id"]}-{data["end_id"]}"
-    sheet_name = f"{online_name}.jpg"
+        for d_id, data in self.sheet_parameters.items():
+            if d_id > self.cfg["max_sheet_count"]:
+                break
 
-    if not cfg["dont_upload"]:
-        # check if file is already uploaded
-        result = file_already_uploaded(online_name)
+            online_name = f"Sheet_{self.cfg['locale'].upper()}_{data['start_id']}_{data['end_id']}"
 
-        if result:
-            data["uploaded_url"] = result
-        else:
-            print(f"{online_name} - creation")
-            sheet_path = create_decksheet(
-                data["img_path_list"],
-                data["grid_size"],
-                cfg["img_w"],
-                cfg["img_h"],
-                os.path.join(temp_path, sheet_name),
-            )
-            data["uploaded_url"] = upload_file(online_name, sheet_path)
-    else:
-        print(f"{online_name} - creation")
-        sheet_path = create_decksheet(
-            data["img_path_list"],
-            data["grid_size"],
-            cfg["img_w"],
-            cfg["img_h"],
-            os.path.join(temp_path, sheet_name),
-        )
-        data["uploaded_url"] = sheet_path
+            # Check Cloudinary First
+            if not self.cfg["dont_upload"]:
+                existing_url = self.check_online_exists(online_name)
+                if existing_url:
+                    data["uploaded_url"] = existing_url
+                    continue
 
-    if deck_id >= cfg["max_sheet_count"]:
-        break
+            # Create Sheet
+            print(f"Creating Sheet: {online_name}")
+            cols = min(data["card_count"], 10)
+            rows = math.ceil(data["card_count"] / 10)
+            data["grid_size"] = (rows, cols)
 
-# load the bag template and update it
-bag_name = (
-    f"{datetime.now().strftime("%Y-%m-%d")} Translated Cards - {cfg["locale"].upper()}"
-)
-bag = load_json_file(bag_template)
-card_template = bag["ObjectStates"][0]["ContainedObjects"][0]
-bag["ObjectStates"][0]["Nickname"] = bag_name
-bag["ObjectStates"][0]["ContainedObjects"] = []
-bag["ObjectStates"][0]["LuaScript"] = get_lua_file("TTSBagLuaScript.lua")
+            # PARALLEL STEP: Load and resize all images for this sheet at once
+            with ThreadPoolExecutor() as executor:
+                tasks = [(path, img_w, img_h) for path in data["img_path_list"]]
+                resized_images = list(executor.map(self._load_and_resize_card, tasks))
 
-# loop cards and add them to bag
-print("Creating output file.")
-for adb_id, data in card_index.items():
-    # skip card backs of double-sided cards
-    if not adb_id.endswith(card_back_suffix):
-        card_json = get_card_json(adb_id, data)
-        if card_json:
-            bag["ObjectStates"][0]["ContainedObjects"].append(card_json)
-        else:
-            print(f"{adb_id} - failed to get card JSON")
+            # Assemble the sheet
+            sheet_img = Image.new("RGB", (cols * img_w, rows * img_h))
+            for i, img in enumerate(resized_images):
+                x = (i % cols) * img_w
+                y = (i // cols) * img_h
+                sheet_img.paste(img, (x, y))
+                img.close()
 
-# output the bag with translated cards
-bag_path = os.path.join(cfg["output_folder"], f"{bag_name}.json")
-with open(bag_path, "w", encoding="utf8") as f:
-    json.dump(bag, f, ensure_ascii=False, indent=2)
-print(f"Successfully created output file at {bag_path}.")
+            out_path = os.path.join(self.temp_path, f"{online_name}.webp")
+            self.save_with_retry(sheet_img, out_path)
 
-# save translation cache
-with open(os.path.join(script_dir, translation_cache_file), "w", encoding="utf8") as f:
-    json.dump(translation_cache, f, ensure_ascii=False, indent=2)
+            # Upload
+            if self.cfg["dont_upload"]:
+                data["uploaded_url"] = "file:///" + out_path
+            else:
+                data["uploaded_url"] = self.upload_to_cloud(online_name, out_path)
 
-# remove temp folder
-if not cfg["keep_temp_folder"] and os.path.exists(temp_path):
-    print("Removing temp folder.")
-    shutil.rmtree(temp_path)
+    def save_with_retry(self, image, path):
+        # 6 is "best/slowest", 4 is "balanced", 0 is "fastest".
+        # 4 usually gives 95% of the benefit of 6 in 10% of the time.
+        webp_method = 4
+
+        name = os.path.basename(path)
+        print(f"Starting to save {name}...")
+
+        quality = self.cfg["img_quality"]
+        while True:
+            image.save(path, format="WebP", quality=quality, method=webp_method)
+            file_size = os.path.getsize(path)
+            if file_size < self.cfg["img_max_byte"] or quality <= 50:
+                print(f"Saved {name} at {quality}% quality ({file_size // 1024} KB)")
+                break
+
+            # Adaptive quality drop: if we're way over, drop by 10, else 5
+            drop = 10 if file_size > (self.cfg["img_max_byte"] * 1.5) else 5
+            quality -= drop
+
+    def check_online_exists(self, name):
+        try:
+            res = cloudinary.Search().expression(f"public_id={name}").execute()
+            if res.get("total_count", 0) > 0:
+                return res["resources"][0]["secure_url"]
+        except Exception:
+            return None
+
+    def upload_to_cloud(self, name, path):
+        folder = f"AH_LCG_{self.cfg['locale'].upper()}"
+        res = cloudinary.uploader.upload(path, public_id=name, folder=folder)
+        return res.get("secure_url")
+
+    def get_translated_name(self, adb_id):
+        clean_id = adb_id[:-2] if adb_id.endswith("-t") else adb_id
+        if clean_id in self.translation_data:
+            return self.translation_data[clean_id]
+        return adb_id
+
+    def build_tts_json(self):
+        print("Building TTS Bag...")
+        bag_template = self._load_json("TTSBagTemplate.json")
+        card_base = bag_template["ObjectStates"][0]["ContainedObjects"][0]
+        contained_objects = []
+
+        for adb_id, data in self.card_index.items():
+            if adb_id.endswith(self.BACK_SUFFIX):
+                continue
+
+            # Card Logic
+            sheet_info = self.sheet_parameters.get(data["deck_id"])
+            if not sheet_info or "uploaded_url" not in sheet_info:
+                continue
+
+            new_card = copy.deepcopy(card_base)
+            back_url = self.PLAYER_BACK_URL
+
+            if data["double_sided"]:
+                # Logic to find the matching back sheet URL
+                for s_id, s_param in self.sheet_parameters.items():
+                    if s_param["sheet_type"] != "back":
+                        continue
+
+                    back_id = f"{adb_id}{self.BACK_SUFFIX}"
+                    if s_param["start_id"] <= back_id <= s_param["end_id"]:
+                        back_url = s_param.get("uploaded_url", self.PLAYER_BACK_URL)
+                        break
+
+            deck_id = data["deck_id"] + self.random_offset
+            new_card["GMNotes"] = '{\n  "id": "' + adb_id + '"\n}'
+            new_card["Nickname"] = self.get_translated_name(adb_id)
+            new_card["CardID"] = f"{deck_id}{data['card_id']:02}"
+            new_card["CustomDeck"] = {
+                str(deck_id): {
+                    "FaceURL": sheet_info["uploaded_url"],
+                    "BackURL": back_url,
+                    "NumWidth": sheet_info["grid_size"][1],
+                    "NumHeight": sheet_info["grid_size"][0],
+                    "BackIsHidden": True,
+                    "UniqueBack": data["double_sided"],
+                    "Type": 0,
+                }
+            }
+            contained_objects.append(new_card)
+
+        # Set bag data
+        date_stamp = datetime.now().strftime("%Y-%m-%d")
+        bag_name = f"{date_stamp} - {self.cfg['locale'].upper()}"
+        bag_template["ObjectStates"][0]["Nickname"] = bag_name
+        bag_template["ObjectStates"][0]["ContainedObjects"] = contained_objects
+
+        # Final export
+        out_name = f"{bag_name}.json"
+        self._save_json(bag_template, os.path.join(self.cfg["output_folder"], out_name))
+        print(f"Export complete: {out_name}")
+
+    def cleanup(self):
+        if not self.cfg.get("keep_temp_folder") and os.path.exists(self.temp_path):
+            shutil.rmtree(self.temp_path)
+
+
+# --- Execution ---
+if __name__ == "__main__":
+    gui = App()
+    config = gui.get_values()
+
+    proc = TTSBundleProcessor(config)
+    proc.load_translation_data()
+    proc.scan_source()
+    proc.organize_sheets()
+    proc.process_images()
+    proc.build_tts_json()
+    proc.cleanup()
