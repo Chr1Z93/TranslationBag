@@ -109,7 +109,7 @@ class TTSBundleProcessor:
                 continue
 
             for file in files:
-                if not file.lower().endswith((".png", ".jpg", ".jpeg")):
+                if not file.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                     continue
                 try:
                     adb_id = self.get_arkhamdb_id(root, file)
@@ -283,7 +283,7 @@ class TTSBundleProcessor:
     def build_tts_json(self):
         print("Building TTS Bag...")
         bag_template = self._load_json("TTSBagTemplate.json")
-        card_base = bag_template["ObjectStates"][0]["ContainedObjects"][0]
+        card_template = bag_template["ObjectStates"][0]["ContainedObjects"][0]
         contained_objects = []
 
         for adb_id, data in self.card_index.items():
@@ -295,7 +295,7 @@ class TTSBundleProcessor:
             if not sheet_info or "uploaded_url" not in sheet_info:
                 continue
 
-            new_card = copy.deepcopy(card_base)
+            new_card = copy.deepcopy(card_template)
             back_url = self.PLAYER_BACK_URL
 
             if data["double_sided"]:
