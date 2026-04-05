@@ -54,7 +54,14 @@ class TTSBundleProcessor:
             for item in response.json()["data"]["all_card"]:
                 if "name" in item:
                     key = item["id"]
-                    self.translation_data[key] = item["name"]
+
+                    # Special handling for Hank (who uses different IDs in TTS)
+                    if key == "10016a":
+                        key = "10015-b1"
+                    elif key == "10016b":
+                        key = "10015-b2"
+
+                    self.translation_data[key] = item
 
         except Exception as e:
             print(f"Error fetching translation data: {e}")
@@ -71,7 +78,9 @@ class TTSBundleProcessor:
 
     def get_arkhamdb_id(self, folder_path, file_name):
         base_name = os.path.splitext(file_name)[0]
-        if len(base_name) >= 5:
+
+        # Assume that base IDs with at least 5 characters are complete
+        if len(base_name.removesuffix(self.BACK_SUFFIX)) >= 5:
             return base_name
 
         folder_name = os.path.basename(folder_path)
@@ -105,7 +114,7 @@ class TTSBundleProcessor:
                 try:
                     adb_id = self.get_arkhamdb_id(root, file)
                     is_back = adb_id.endswith(self.BACK_SUFFIX)
-                    actual_id = adb_id[:-5] if is_back else adb_id
+                    actual_id = adb_id.removesuffix(self.BACK_SUFFIX)
 
                     if is_back and actual_id in self.card_index:
                         self.card_index[actual_id]["double_sided"] = True
@@ -205,7 +214,7 @@ class TTSBundleProcessor:
                     continue
 
             # Create Sheet
-            print(f"Creating Sheet: {online_name}")
+            print(f"[CREATING] {online_name}")
             cols = min(data["card_count"], 10)
             rows = math.ceil(data["card_count"] / 10)
             data["grid_size"] = (rows, cols)
@@ -238,14 +247,14 @@ class TTSBundleProcessor:
         webp_method = 4
 
         name = os.path.basename(path)
-        print(f"Starting to save {name}...")
+        print(f"[SAVING]   {name}...")
 
         quality = self.cfg["img_quality"]
         while True:
             image.save(path, format="WebP", quality=quality, method=webp_method)
             file_size = os.path.getsize(path)
             if file_size < self.cfg["img_max_byte"] or quality <= 50:
-                print(f"Saved {name} at {quality}% quality ({file_size // 1024} KB)")
+                print(f"[SAVED]    {name} at {quality}% quality ({file_size // 1024} KB)")
                 break
 
             # Adaptive quality drop: if we're way over, drop by 10, else 5
@@ -265,11 +274,11 @@ class TTSBundleProcessor:
         res = cloudinary.uploader.upload(path, public_id=name, folder=folder)
         return res.get("secure_url")
 
-    def get_translated_name(self, adb_id):
+    def get_translated_data(self, adb_id):
         clean_id = adb_id[:-2] if adb_id.endswith("-t") else adb_id
         if clean_id in self.translation_data:
             return self.translation_data[clean_id]
-        return adb_id
+        return {}
 
     def build_tts_json(self):
         print("Building TTS Bag...")
@@ -300,9 +309,20 @@ class TTSBundleProcessor:
                         back_url = s_param.get("uploaded_url", self.PLAYER_BACK_URL)
                         break
 
+            # Build card data
+            new_card["GMNotes"] = '{"id":"' + adb_id + '"}'
+
+            # Name / Description
+            translated_data = self.get_translated_data(adb_id)
+            new_card["Nickname"] = translated_data.get("name", adb_id)
+            new_card["Description"] = translated_data.get("subname", "")
+
+            # Investigator handling
+            if translated_data.get("type_code") == "investigator":
+                new_card["SidewaysCard"] = True
+
+            # Image data
             deck_id = data["deck_id"] + self.random_offset
-            new_card["GMNotes"] = '{\n  "id": "' + adb_id + '"\n}'
-            new_card["Nickname"] = self.get_translated_name(adb_id)
             new_card["CardID"] = f"{deck_id}{data['card_id']:02}"
             new_card["CustomDeck"] = {
                 str(deck_id): {
