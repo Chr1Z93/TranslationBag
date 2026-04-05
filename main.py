@@ -5,6 +5,7 @@ import os
 import random
 import re
 import shutil
+import sys
 from datetime import datetime
 import requests
 from concurrent.futures import ThreadPoolExecutor
@@ -132,6 +133,11 @@ class TTSBundleProcessor:
             if f"{adb_id}{self.BACK_SUFFIX}" in self.card_index:
                 self.card_index[adb_id]["double_sided"] = True
 
+        # Check if the index is empty and abort
+        if not self.card_index:
+            print("[ERROR] No valid card images found in the source folder.")
+            sys.exit(1)
+
     def organize_sheets(self):
         """Groups cards into sheet batches based on cycle and double-sided status."""
         sorted_cards = sorted(self.card_index.items(), key=self.sort_key)
@@ -254,7 +260,9 @@ class TTSBundleProcessor:
             image.save(path, format="WebP", quality=quality, method=webp_method)
             file_size = os.path.getsize(path)
             if file_size < self.cfg["img_max_byte"] or quality <= 50:
-                print(f"[SAVED]    {name} at {quality}% quality ({file_size // 1024} KB)")
+                print(
+                    f"[SAVED]    {name} at {quality}% quality ({file_size // 1024} KB)"
+                )
                 break
 
             # Adaptive quality drop: if we're way over, drop by 10, else 5
