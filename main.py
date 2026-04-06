@@ -135,10 +135,10 @@ class TTSBundleProcessor:
         # Check specific ID lists
         for category, id_list in self.SPECIAL_ID_MAPS.items():
             if adb_id in id_list:
-                return category
+                return self.BACK_URLS[category]
 
-        # Check for deck limit (Player Cards)
-        if "deck_limit" in translated_data and translated_data["deck_limit"] > 0:
+        # Check for deck limit (Player Cards including bonded [deck_limit = 0])
+        if "deck_limit" in translated_data:
             return self.BACK_URLS["Player"]
 
         # Check for encounter code (Encounter Cards)
