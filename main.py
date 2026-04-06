@@ -52,7 +52,17 @@ class TTSBundleProcessor:
             "10647c",
             "10648",
         ],
-        "Player": ["085" + str(i) for i in range(87, 96)] + ["086" + str(i) for i in range(14, 23)]
+        "Player": ["085" + str(i) for i in range(87, 96)]
+        + ["086" + str(i) for i in range(14, 23)],
+    }
+
+    # Additions to the final name if suffix is present
+    SUFFIX_MAP = {
+        "-p": "(Parallel)",
+        "-pf": "(Parallel Front)",
+        "-pb": "(Parallel Back)",
+        "-t": "(Taboo)",
+        "-c": "Upgrade Sheet",
     }
 
     def __init__(self, cfg):
@@ -121,10 +131,10 @@ class TTSBundleProcessor:
                 return json.load(f)
         return default if default is not None else {}
 
-    def resolve_back_url(self, adb_id, data, translated_data):
+    def resolve_back_url(self, arkham_id, data, translated_data):
         # Double-sided cards use the specific back from the sheet
         if data.get("double_sided"):
-            back_id = f"{adb_id}{self.BACK_SUFFIX}"
+            back_id = f"{arkham_id}{self.BACK_SUFFIX}"
             for s_param in self.sheet_parameters.values():
                 if (
                     s_param["sheet_type"] == "back"
@@ -132,9 +142,13 @@ class TTSBundleProcessor:
                 ):
                     return s_param.get("uploaded_url", self.BACK_URLS["Player"])
 
+        # Check for suffix (Upgradesheets)
+        if arkham_id.endswith("-c"):
+            return self.BACK_URLS["Upgradesheet"]
+
         # Check specific ID lists
         for category, id_list in self.SPECIAL_ID_MAPS.items():
-            if adb_id in id_list:
+            if arkham_id in id_list:
                 return self.BACK_URLS[category]
 
         # Check for deck limit (Player Cards including bonded [deck_limit = 0])
@@ -152,7 +166,7 @@ class TTSBundleProcessor:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def get_arkhamdb_id(self, folder_path, file_name):
+    def get_arkham_id(self, folder_path, file_name):
         base_name = os.path.splitext(file_name)[0]
 
         # Assume that base IDs with at least 5 characters are complete
@@ -191,15 +205,15 @@ class TTSBundleProcessor:
                 if not file.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                     continue
                 try:
-                    adb_id = self.get_arkhamdb_id(root, file)
-                    is_back = adb_id.endswith(self.BACK_SUFFIX)
-                    actual_id = adb_id.removesuffix(self.BACK_SUFFIX)
+                    arkham_id = self.get_arkham_id(root, file)
+                    is_back = arkham_id.endswith(self.BACK_SUFFIX)
+                    actual_id = arkham_id.removesuffix(self.BACK_SUFFIX)
 
                     if is_back and actual_id in self.card_index:
                         self.card_index[actual_id]["double_sided"] = True
 
-                    self.card_index[adb_id] = {
-                        "cycle_id": int(adb_id[:2]),
+                    self.card_index[arkham_id] = {
+                        "cycle_id": int(arkham_id[:2]),
                         "file_path": os.path.join(root, file),
                         "double_sided": is_back,  # Will be updated for fronts in sorting phase
                         "category": folder_category,
@@ -208,9 +222,9 @@ class TTSBundleProcessor:
                     print(f"Skip {file}: {e}")
 
         # Finalize double-sided status for fronts
-        for adb_id in self.card_index:
-            if f"{adb_id}{self.BACK_SUFFIX}" in self.card_index:
-                self.card_index[adb_id]["double_sided"] = True
+        for arkham_id in self.card_index:
+            if f"{arkham_id}{self.BACK_SUFFIX}" in self.card_index:
+                self.card_index[arkham_id]["double_sided"] = True
 
         # Check if the index is empty and abort
         if not self.card_index:
@@ -250,7 +264,7 @@ class TTSBundleProcessor:
                 last_cycle = None
                 current_batch = []
 
-                for adb_id, data in card_list:
+                for arkham_id, data in card_list:
                     # Start new sheet if cycle changes OR sheet is full
                     if (
                         last_cycle is not None and data["cycle_id"] != last_cycle
@@ -260,7 +274,7 @@ class TTSBundleProcessor:
 
                     data["card_id"] = len(current_batch)
                     data["deck_id"] = self.deck_id_counter + 1
-                    current_batch.append((adb_id, data))
+                    current_batch.append((arkham_id, data))
                     last_cycle = data["cycle_id"]
 
                 if current_batch:
@@ -372,10 +386,13 @@ class TTSBundleProcessor:
         res = cloudinary.uploader.upload(path, public_id=name, folder=folder)
         return res.get("secure_url")
 
-    def get_translated_data(self, adb_id):
-        clean_id = adb_id[:-2] if adb_id.endswith("-t") else adb_id
+    def get_translated_data(self, arkham_id):
+        # Remove specific suffix if possible
+        clean_id = re.sub(r"-(p[fb]|[tcp])$", "", arkham_id)
+
         if clean_id in self.translation_data:
             return self.translation_data[clean_id]
+
         return {}
 
     def build_tts_json(self):
@@ -384,8 +401,8 @@ class TTSBundleProcessor:
         card_template = bag_template["ObjectStates"][0]["ContainedObjects"][0]
         contained_objects = []
 
-        for adb_id, data in self.card_index.items():
-            if adb_id.endswith(self.BACK_SUFFIX):
+        for arkham_id, data in self.card_index.items():
+            if arkham_id.endswith(self.BACK_SUFFIX):
                 continue
 
             # Card Logic
@@ -394,20 +411,26 @@ class TTSBundleProcessor:
                 continue
 
             # Get data from arkham.build API with translated fields
-            translated_data = self.get_translated_data(adb_id)
+            translated_data = self.get_translated_data(arkham_id)
 
             # Create a copy of the template
             new_card = copy.deepcopy(card_template)
 
             # Determine the back url
-            back_url = self.resolve_back_url(adb_id, data, translated_data)
+            back_url = self.resolve_back_url(arkham_id, data, translated_data)
 
             # Build card data
-            new_card["GMNotes"] = '{"id":"' + adb_id + '"}'
-            new_card["GUID"] = f"{self.cfg['locale']}_{adb_id}"
+            new_card["GMNotes"] = '{"id":"' + arkham_id + '"}'
+            new_card["GUID"] = f"{self.cfg['locale']}_{arkham_id}"
 
             # Name / Description
-            new_card["Nickname"] = translated_data.get("name", adb_id)
+            name_suffix = ""
+            for suffix, label in self.SUFFIX_MAP.items():
+                if arkham_id.endswith(suffix):
+                    name_suffix = " " + label
+                    break
+
+            new_card["Nickname"] = translated_data.get("name", arkham_id) + name_suffix
             new_card["Description"] = translated_data.get("subname", "")
 
             # Investigator handling
