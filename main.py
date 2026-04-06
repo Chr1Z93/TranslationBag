@@ -1,15 +1,15 @@
 import copy
+import hashlib
 import json
 import math
 import os
-import random
 import re
+import requests
 import shutil
 import sys
-from datetime import datetime
-import requests
-from concurrent.futures import ThreadPoolExecutor
 
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 import cloudinary
 import cloudinary.uploader
@@ -19,36 +19,57 @@ from modules.gui import App
 
 
 class TTSBundleProcessor:
+    # Constants
+    WHITELIST = ["EncounterCards", "PlayerCards", "Taboo"]
+    BACK_SUFFIX = "-back"
+
+    # Specific backs
+    BACK_URLS = {
+        "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
+        "Cthulhu-Deck": "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/",
+        "Encounter": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/",
+        "Enemy-Deck": "https://steamusercontent-a.akamaihd.net/ugc/2453969771999768294/54768C2E562D30E34B79EB7A94FCDC792E49FC28/",
+        "Player": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/",
+        "Upgradesheet": "https://steamusercontent-a.akamaihd.net/ugc/1814412497119682452/BD224FCE1980DBA38E5A687FABFD146AA1A30D0E/",
+    }
+
+    # Groups of IDs that trigger specific logic
+    SPECIAL_ID_MAPS = {
+        "Artifact": ["11552", "11582", "11611", "11638", "11672", "11688"],
+        "Cthulhu-Deck": [str(i) for i in range(11705, 11716)],
+        "Encounter": ["06028", "11016"],
+        "Enemy-Deck": [
+            "10643",
+            "10644a",
+            "10644b",
+            "10644c",
+            "10645a",
+            "10645b",
+            "10645c",
+            "10646",
+            "10647a",
+            "10647b",
+            "10647c",
+            "10648",
+        ],
+        "Player": ["085" + str(i) for i in range(87, 96)] + ["086" + str(i) for i in range(14, 23)]
+    }
+
     def __init__(self, cfg):
         self.cfg = cfg
         self.script_dir = os.path.dirname(__file__)
         self.temp_path = os.path.join(self.script_dir, "temp")
 
-        # Constants & Configuration
+        # Configuration
         locale = self.cfg["locale"].lower()
-        self.WHITELIST = ["EncounterCards", "PlayerCards", "Taboo"]
-        self.BACK_SUFFIX = "-back"
         self.ARKHAM_BUILD_URL = f"https://api.arkham.build/v1/cache/cards/{locale}"
-
-        # Specific backs
-        self.PLAYER_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
-        self.ENCOUNTER_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/"
-        self.ARTIFACT_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/"
-        self.CTHULHU_DECK_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/"
-        self.ENEMY_DECK_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2453969771999768294/54768C2E562D30E34B79EB7A94FCDC792E49FC28/"
-        self.UPGRADESHEET_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/1814412497119682452/BD224FCE1980DBA38E5A687FABFD146AA1A30D0E/"
-
-        # Lists of IDs for specific backs
-        self.ARTIFACT_IDS = ["11552", "11582", "11611", "11638", "11672", "11688"]
-        self.CTHULHU_IDS = [str(i) for i in range(11705, 11716)]
-        self.ENEMY_DECK_IDS = ["11223"]
 
         # State Management
         self.card_index = {}
         self.sheet_parameters = {}
         self.reported_missing_url = {}
         self.deck_id_counter = 0
-        self.random_offset = random.randint(1000, 3000) * 10
+        self.deck_offset = self.string_to_3_digits(locale)
         self.translation_data = {}
 
         # Initialize Cloudinary
@@ -57,6 +78,21 @@ class TTSBundleProcessor:
             api_key=self.cfg["api_key"],
             api_secret=self.cfg["api_secret"],
         )
+
+    def string_to_3_digits(self, input_string):
+        """Consistently turns any string into a number between 100 and 999."""
+        # Create a deterministic hex hash of the string
+        hash_object = hashlib.sha256(input_string.encode())
+        hash_hex = hash_object.hexdigest()
+
+        # Convert the hex string to a large integer
+        hash_int = int(hash_hex, 16)
+
+        # Use modulo to fit it into a 3-digit range (100-999)
+        # (hash_int % 900) gives 0-899. Adding 100 gives 100-999.
+        three_digit_result = (hash_int % 900) + 100
+
+        return three_digit_result
 
     def load_translation_data(self):
         try:
@@ -84,6 +120,33 @@ class TTSBundleProcessor:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         return default if default is not None else {}
+
+    def resolve_back_url(self, adb_id, data, translated_data):
+        # Double-sided cards use the specific back from the sheet
+        if data.get("double_sided"):
+            back_id = f"{adb_id}{self.BACK_SUFFIX}"
+            for s_param in self.sheet_parameters.values():
+                if (
+                    s_param["sheet_type"] == "back"
+                    and s_param["start_id"] <= back_id <= s_param["end_id"]
+                ):
+                    return s_param.get("uploaded_url", self.BACK_URLS["Player"])
+
+        # Check specific ID lists
+        for category, id_list in self.SPECIAL_ID_MAPS.items():
+            if adb_id in id_list:
+                return category
+
+        # Check for deck limit (Player Cards)
+        if "deck_limit" in translated_data and translated_data["deck_limit"] > 0:
+            return self.BACK_URLS["Player"]
+
+        # Check for encounter code (Encounter Cards)
+        if "encounter_code" in translated_data:
+            return self.BACK_URLS["Encounter"]
+
+        # Final Fallback
+        return self.BACK_URLS["Player"]
 
     def _save_json(self, data, path):
         with open(path, "w", encoding="utf-8") as f:
@@ -337,21 +400,11 @@ class TTSBundleProcessor:
             new_card = copy.deepcopy(card_template)
 
             # Determine the back url
-            back_url = self.PLAYER_BACK_URL
-
-            if data["double_sided"]:
-                # Logic to find the matching back sheet URL
-                for s_id, s_param in self.sheet_parameters.items():
-                    if s_param["sheet_type"] != "back":
-                        continue
-
-                    back_id = f"{adb_id}{self.BACK_SUFFIX}"
-                    if s_param["start_id"] <= back_id <= s_param["end_id"]:
-                        back_url = s_param.get("uploaded_url", self.PLAYER_BACK_URL)
-                        break
+            back_url = self.resolve_back_url(adb_id, data, translated_data)
 
             # Build card data
             new_card["GMNotes"] = '{"id":"' + adb_id + '"}'
+            new_card["GUID"] = f"{self.cfg['locale']}_{adb_id}"
 
             # Name / Description
             new_card["Nickname"] = translated_data.get("name", adb_id)
@@ -362,7 +415,7 @@ class TTSBundleProcessor:
                 new_card["SidewaysCard"] = True
 
             # Image data
-            deck_id = data["deck_id"] + self.random_offset
+            deck_id = data["deck_id"] + self.deck_offset
             new_card["CardID"] = f"{deck_id}{data['card_id']:02}"
             new_card["CustomDeck"] = {
                 str(deck_id): {
@@ -381,6 +434,7 @@ class TTSBundleProcessor:
         date_stamp = datetime.now().strftime("%Y-%m-%d")
         bag_name = f"{date_stamp} - {self.cfg['locale'].upper()}"
         bag_template["ObjectStates"][0]["Nickname"] = bag_name
+        bag_template["ObjectStates"][0]["GUID"] = f"{self.cfg['locale']}_bag"
         bag_template["ObjectStates"][0]["ContainedObjects"] = contained_objects
 
         # Final export
