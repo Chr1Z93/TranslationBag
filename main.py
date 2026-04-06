@@ -26,10 +26,22 @@ class TTSBundleProcessor:
 
         # Constants & Configuration
         locale = self.cfg["locale"].lower()
-        self.PLAYER_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
-        self.WHITELIST = ["PlayerCards"]
+        self.WHITELIST = ["EncounterCards", "PlayerCards", "Taboo"]
         self.BACK_SUFFIX = "-back"
         self.ARKHAM_BUILD_URL = f"https://api.arkham.build/v1/cache/cards/{locale}"
+
+        # Specific backs
+        self.PLAYER_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/"
+        self.ENCOUNTER_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/"
+        self.ARTIFACT_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/"
+        self.CTHULHU_DECK_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/"
+        self.ENEMY_DECK_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/2453969771999768294/54768C2E562D30E34B79EB7A94FCDC792E49FC28/"
+        self.UPGRADESHEET_BACK_URL = "https://steamusercontent-a.akamaihd.net/ugc/1814412497119682452/BD224FCE1980DBA38E5A687FABFD146AA1A30D0E/"
+
+        # Lists of IDs for specific backs
+        self.ARTIFACT_IDS = ["11552", "11582", "11611", "11638", "11672", "11688"]
+        self.CTHULHU_IDS = [str(i) for i in range(11705, 11716)]
+        self.ENEMY_DECK_IDS = ["11223"]
 
         # State Management
         self.card_index = {}
@@ -106,7 +118,10 @@ class TTSBundleProcessor:
         print(f"Scanning: {self.cfg['source_folder']}")
         for root, _, files in os.walk(self.cfg["source_folder"]):
             path_parts = root.split(os.sep)
-            if not any(folder in path_parts for folder in self.WHITELIST):
+
+            # Identify which whitelist folder this belongs to
+            folder_category = next((f for f in self.WHITELIST if f in path_parts), None)
+            if not folder_category:
                 continue
 
             for file in files:
@@ -124,6 +139,7 @@ class TTSBundleProcessor:
                         "cycle_id": int(adb_id[:2]),
                         "file_path": os.path.join(root, file),
                         "double_sided": is_back,  # Will be updated for fronts in sorting phase
+                        "category": folder_category,
                     }
                 except Exception as e:
                     print(f"Skip {file}: {e}")
@@ -139,42 +155,53 @@ class TTSBundleProcessor:
             sys.exit(1)
 
     def organize_sheets(self):
-        """Groups cards into sheet batches based on cycle and double-sided status."""
-        sorted_cards = sorted(self.card_index.items(), key=self.sort_key)
+        """Groups cards into sheet batches separated by WHITELIST folders."""
 
-        batches = {
-            "single": [c for c in sorted_cards if not c[1]["double_sided"]],
-            "front": [
-                c
-                for c in sorted_cards
-                if c[1]["double_sided"] and not c[0].endswith(self.BACK_SUFFIX)
-            ],
-            "back": [
-                c
-                for c in sorted_cards
-                if c[1]["double_sided"] and c[0].endswith(self.BACK_SUFFIX)
-            ],
-        }
+        # Loop through each category in the whitelist separately
+        for category in self.WHITELIST:
+            # Filter the index for only cards in this specific folder
+            category_cards = {
+                k: v for k, v in self.card_index.items() if v["category"] == category
+            }
 
-        for sheet_type, card_list in batches.items():
-            last_cycle = None
-            current_batch = []
+            if not category_cards:
+                continue
 
-            for adb_id, data in card_list:
-                # Start new sheet if cycle changes OR sheet is full
-                if (last_cycle is not None and data["cycle_id"] != last_cycle) or len(
-                    current_batch
-                ) >= self.cfg["img_count_per_sheet"]:
+            sorted_cards = sorted(category_cards.items(), key=self.sort_key)
+
+            batches = {
+                "single": [c for c in sorted_cards if not c[1]["double_sided"]],
+                "front": [
+                    c
+                    for c in sorted_cards
+                    if c[1]["double_sided"] and not c[0].endswith(self.BACK_SUFFIX)
+                ],
+                "back": [
+                    c
+                    for c in sorted_cards
+                    if c[1]["double_sided"] and c[0].endswith(self.BACK_SUFFIX)
+                ],
+            }
+
+            for sheet_type, card_list in batches.items():
+                last_cycle = None
+                current_batch = []
+
+                for adb_id, data in card_list:
+                    # Start new sheet if cycle changes OR sheet is full
+                    if (
+                        last_cycle is not None and data["cycle_id"] != last_cycle
+                    ) or len(current_batch) >= self.cfg["img_count_per_sheet"]:
+                        self._create_sheet_param(current_batch, sheet_type)
+                        current_batch = []
+
+                    data["card_id"] = len(current_batch)
+                    data["deck_id"] = self.deck_id_counter + 1
+                    current_batch.append((adb_id, data))
+                    last_cycle = data["cycle_id"]
+
+                if current_batch:
                     self._create_sheet_param(current_batch, sheet_type)
-                    current_batch = []
-
-                data["card_id"] = len(current_batch)
-                data["deck_id"] = self.deck_id_counter + 1  # Preview ID
-                current_batch.append((adb_id, data))
-                last_cycle = data["cycle_id"]
-
-            if current_batch:
-                self._create_sheet_param(current_batch, sheet_type)
 
     def _create_sheet_param(self, batch, sheet_type):
         self.deck_id_counter += 1
@@ -303,7 +330,13 @@ class TTSBundleProcessor:
             if not sheet_info or "uploaded_url" not in sheet_info:
                 continue
 
+            # Get data from arkham.build API with translated fields
+            translated_data = self.get_translated_data(adb_id)
+
+            # Create a copy of the template
             new_card = copy.deepcopy(card_template)
+
+            # Determine the back url
             back_url = self.PLAYER_BACK_URL
 
             if data["double_sided"]:
@@ -321,7 +354,6 @@ class TTSBundleProcessor:
             new_card["GMNotes"] = '{"id":"' + adb_id + '"}'
 
             # Name / Description
-            translated_data = self.get_translated_data(adb_id)
             new_card["Nickname"] = translated_data.get("name", adb_id)
             new_card["Description"] = translated_data.get("subname", "")
 
