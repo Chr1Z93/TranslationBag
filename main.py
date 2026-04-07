@@ -20,7 +20,7 @@ from modules.gui import App
 
 class TTSBundleProcessor:
     # Constants
-    WHITELIST = ["EncounterCards", "PlayerCards", "Taboo"]
+    WHITELIST = ["EncounterCards", "PlayerCards", "Taboo", "Tarot"]
     BACK_SUFFIX = "-back"
 
     # Specific backs
@@ -249,7 +249,7 @@ class TTSBundleProcessor:
             sys.exit(1)
 
     def organize_sheets(self):
-        """Groups cards into sheet batches separated by WHITELIST folders."""
+        """Groups cards into sheet batches separated by WHITELIST and Back URLs."""
 
         # Loop through each category in the whitelist separately
         for category in self.WHITELIST:
@@ -263,41 +263,61 @@ class TTSBundleProcessor:
 
             sorted_cards = sorted(category_cards.items(), key=self.sort_key)
 
+            # Pre-calculate back URLs for all cards to allow grouping by back
+            enriched_cards = []
+            for arkham_id, data in sorted_cards:
+                translated_data = self.get_translated_data(arkham_id)
+                back_url = self.resolve_back_url(arkham_id, data, translated_data)
+                enriched_cards.append((arkham_id, data, back_url))
+
             batches = {
-                "single": [c for c in sorted_cards if not c[1]["double_sided"]],
+                "single": [c for c in enriched_cards if not c[1]["double_sided"]],
                 "front": [
                     c
-                    for c in sorted_cards
+                    for c in enriched_cards
                     if c[1]["double_sided"] and not c[0].endswith(self.BACK_SUFFIX)
                 ],
                 "back": [
                     c
-                    for c in sorted_cards
+                    for c in enriched_cards
                     if c[1]["double_sided"] and c[0].endswith(self.BACK_SUFFIX)
                 ],
             }
 
             for sheet_type, card_list in batches.items():
-                last_cycle = None
+                last_group_key = (None, None)
                 current_batch = []
 
-                for arkham_id, data in card_list:
-                    # Start new sheet if cycle changes OR sheet is full
-                    if (
-                        last_cycle is not None and data["cycle_id"] != last_cycle
-                    ) or len(current_batch) >= self.cfg["img_count_per_sheet"]:
-                        self._create_sheet_param(current_batch, sheet_type)
+                for arkham_id, data, back_url in card_list:
+                    # Create a unique key for this specific combination
+                    # Double-sided cards don't care about shared backs
+                    group_key = (
+                        data["cycle_id"],
+                        back_url if sheet_type == "single" else "double-sided",
+                    )
+                    is_first_card = last_group_key == (None, None)
+
+                    # Start new sheet if cycle/back changes OR sheet is full
+                    if not is_first_card and (
+                        group_key != last_group_key
+                        or len(current_batch) >= self.cfg["img_count_per_sheet"]
+                    ):
+                        self._create_sheet_param(
+                            current_batch, sheet_type, last_group_key[1]
+                        )
                         current_batch = []
 
                     data["card_id"] = len(current_batch)
                     data["deck_id"] = self.deck_id_counter + 1
                     current_batch.append((arkham_id, data))
-                    last_cycle = data["cycle_id"]
+                    last_group_key = group_key
 
                 if current_batch:
-                    self._create_sheet_param(current_batch, sheet_type)
+                    self._create_sheet_param(
+                        current_batch, sheet_type, last_group_key[1]
+                    )
 
-    def _create_sheet_param(self, batch, sheet_type):
+    def _create_sheet_param(self, batch, sheet_type, back_url):
         self.deck_id_counter += 1
         self.sheet_parameters[self.deck_id_counter] = {
             "img_path_list": [d["file_path"] for _, d in batch],
@@ -305,6 +325,7 @@ class TTSBundleProcessor:
             "end_id": batch[-1][0],
             "sheet_type": sheet_type,
             "card_count": len(batch),
+            "back_url": back_url,
         }
 
     def _load_and_resize_card(self, args):
@@ -425,6 +446,7 @@ class TTSBundleProcessor:
             # Card Logic
             sheet_info = self.sheet_parameters.get(data["deck_id"])
             if not sheet_info or "uploaded_url" not in sheet_info:
+                print(f"[WARNING] Skipping {arkham_id}: No info / URL found for sheet {data['deck_id']}")
                 continue
 
             # Get data from arkham.build API with translated fields
@@ -434,7 +456,10 @@ class TTSBundleProcessor:
             new_card = copy.deepcopy(card_template)
 
             # Determine the back url
-            back_url = self.resolve_back_url(arkham_id, data, translated_data)
+            if sheet_info["sheet_type"] == "single":
+                back_url = sheet_info["back_url"]
+            else:
+                back_url = self.resolve_back_url(arkham_id, data, translated_data)
 
             # Build card data
             new_card["GMNotes"] = '{"id":"' + arkham_id + '"}'
