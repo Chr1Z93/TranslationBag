@@ -28,6 +28,8 @@ class TTSBundleProcessor:
         # Encounter/Player are the "regular" backs
         "Encounter": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/",
         "Player": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/",
+        # Arkham Woods are used in multiple campaigns
+        "ArkhamWoods": "https://steamusercontent-a.akamaihd.net/ugc/10039895077102366513/A4B27CFD64422A1055CA9DBE662A366D9FCA200F/",
         # Artifacts are from TDC
         "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
         # Concealed Mini-Cards are from TSK
@@ -44,6 +46,8 @@ class TTSBundleProcessor:
 
     # Groups of IDs that trigger specific logic
     SPECIAL_ID_MAPS = {
+        "ArkhamWoods": ["011" + str(i) for i in range(50, 56)]
+        + ["50033", "50034", "50035", "50036", "54021", "54022", "54023"],
         "Artifact": ["11552", "11582", "11611", "11638", "11672", "11688"],
         "Cthulhu-Deck": [str(i) for i in range(11705, 11716)],
         "Encounter": ["06028", "11016"],
@@ -97,6 +101,25 @@ class TTSBundleProcessor:
             api_key=self.cfg["api_key"],
             api_secret=self.cfg["api_secret"],
         )
+
+        # Maybe load local versions of special card backs
+        self.local_backs_path = os.path.join(self.cfg["source_folder"], "Backs")
+        self._load_local_backs()
+
+    def _load_local_backs(self):
+        """Overrides hardcoded BACK_URLS if a file with the same name exists locally."""
+        if not os.path.exists(self.local_backs_path):
+            return
+
+        print(f"Checking for local backs in: {self.local_backs_path}")
+        # Look for files like "Encounter.png", "Player.jpg", etc.
+        for filename in os.listdir(self.local_backs_path):
+            name_part = os.path.splitext(filename)[0]
+            if name_part in self.BACK_URLS:
+                full_path = os.path.join(self.local_backs_path, filename)
+                # Store the local path temporarily
+                self.BACK_URLS[name_part] = full_path
+                print(f"  -> Found local override for {name_part}")
 
     def string_to_3_digits(self, input_string):
         """Consistently turns any string into a number between 100 and 999."""
@@ -446,7 +469,9 @@ class TTSBundleProcessor:
             # Card Logic
             sheet_info = self.sheet_parameters.get(data["deck_id"])
             if not sheet_info or "uploaded_url" not in sheet_info:
-                print(f"[WARNING] Skipping {arkham_id}: No info / URL found for sheet {data['deck_id']}")
+                print(
+                    f"[WARNING] Skipping {arkham_id}: No info / URL found for {data['deck_id']}"
+                )
                 continue
 
             # Get data from arkham.build API with translated fields
