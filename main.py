@@ -25,12 +25,20 @@ class TTSBundleProcessor:
 
     # Specific backs
     BACK_URLS = {
-        "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
-        "Concealed": "https://steamusercontent-a.akamaihd.net/ugc/1941643328387229452/B0883940A23A9E63B99FF9CA6A344C3C57EC3257/",
-        "Cthulhu-Deck": "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/",
+        # Encounter/Player are the "regular" backs
         "Encounter": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/",
-        "Enemy-Deck": "https://steamusercontent-a.akamaihd.net/ugc/2453969771999768294/54768C2E562D30E34B79EB7A94FCDC792E49FC28/",
         "Player": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/",
+        # Artifacts are from TDC
+        "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
+        # Concealed Mini-Cards are from TSK
+        "Concealed": "https://steamusercontent-a.akamaihd.net/ugc/1941643328387229452/B0883940A23A9E63B99FF9CA6A344C3C57EC3257/",
+        # Cthulhu-Deck is from TDC
+        "Cthulhu-Deck": "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/",
+        # Enemy-Deck is from FHV
+        "Enemy-Deck": "https://steamusercontent-a.akamaihd.net/ugc/2453969771999768294/54768C2E562D30E34B79EB7A94FCDC792E49FC28/",
+        # Tarot cards are from RtTCU
+        "Tarot": "https://steamusercontent-a.akamaihd.net/ugc/1697276706767619573/BC43BD2A94446B804BE325C7255D8179DEB2ABE8/",
+        # Upgradesheets (Customizable) are from TSK
         "Upgradesheet": "https://steamusercontent-a.akamaihd.net/ugc/1814412497119682452/BD224FCE1980DBA38E5A687FABFD146AA1A30D0E/",
     }
 
@@ -143,18 +151,22 @@ class TTSBundleProcessor:
                 ):
                     return s_param.get("uploaded_url", self.BACK_URLS["Player"])
 
-        # Check for suffix (Upgradesheets)
+        # Check for suffix (Upgradesheets from TSK)
         if arkham_id.endswith("-c"):
             return self.BACK_URLS["Upgradesheet"]
-        
-        # Check for prefix (Concealed)
+
+        # Check for prefix (Concealed cards from TSK)
         if arkham_id.startswith("HC"):
             return self.BACK_URLS["Concealed"]
 
+        # Check for prefix (Tarot cards from RtTCU)
+        if arkham_id.startswith("TAR"):
+            return self.BACK_URLS["Tarot"]
+
         # Check specific ID lists
-        for category, id_list in self.SPECIAL_ID_MAPS.items():
+        for special_type, id_list in self.SPECIAL_ID_MAPS.items():
             if arkham_id in id_list:
-                return self.BACK_URLS[category]
+                return self.BACK_URLS[special_type]
 
         # Check for deck limit (Player Cards including bonded [deck_limit = 0])
         if "deck_limit" in translated_data:
