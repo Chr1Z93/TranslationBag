@@ -364,23 +364,58 @@ class TTSBundleProcessor:
             return Image.new("RGB", (img_w, img_h), (255, 0, 0))  # Red error card
 
     def process_images(self):
-        """Stitches images and handles uploading."""
+        """
+        1. Uploads local back overrides if they exist.
+        2. Stitches card images into sheets.
+        3. Uploads sheets to Cloudinary (or uses local file:/// paths).
+        """
+        # Handle Local Back Overrides
+        local_backs_dir = os.path.join(self.cfg["source_folder"], "Backs")
+        if os.path.exists(local_backs_dir):
+            for key in list(self.BACK_URLS.keys()):
+                # Look for any common image extension
+                for ext in [".png", ".jpg", ".jpeg", ".webp"]:
+                    local_path = os.path.join(local_backs_dir, f"{key}{ext}")
+                    if os.path.exists(local_path):
+                        print(f"[INFO] Local back found: {key} -> {local_path}")
+                        online_name = f"Back_{self.cfg['locale'].upper()}_{key}"
+
+                        if self.cfg["dont_upload"]:
+                            self.BACK_URLS[key] = "file:///" + local_path
+                        else:
+                            # Check if already uploaded to save time/quota
+                            existing_url = self.check_online_exists(online_name)
+                            if existing_url:
+                                self.BACK_URLS[key] = existing_url
+                            else:
+                                print(f"[UPLOADING] {online_name}...")
+                                self.BACK_URLS[key] = self.upload_to_cloud(
+                                    online_name, local_path
+                                )
+                        break  # Found the file, move to next key
+
+        # Setup Temp Directory for Sheets
         if os.path.exists(self.temp_path):
             shutil.rmtree(self.temp_path)
         os.makedirs(self.temp_path)
 
         img_w, img_h = self.cfg["img_w"], self.cfg["img_h"]
 
+        # Process Card Sheets
         for d_id, data in self.sheet_parameters.items():
             if d_id > self.cfg["max_sheet_count"]:
+                print(
+                    f"[LIMIT] Reached max_sheet_count ({self.cfg['max_sheet_count']})"
+                )
                 break
 
             online_name = f"Sheet_{self.cfg['locale'].upper()}_{data['start_id']}_{data['end_id']}"
 
-            # Check Cloudinary First
+            # Check Cloudinary First to skip redundant processing
             if not self.cfg["dont_upload"]:
                 existing_url = self.check_online_exists(online_name)
                 if existing_url:
+                    print(f"[SKIPPING] {online_name} (Already Online)")
                     data["uploaded_url"] = existing_url
                     continue
 
@@ -390,7 +425,7 @@ class TTSBundleProcessor:
             rows = math.ceil(data["card_count"] / 10)
             data["grid_size"] = (rows, cols)
 
-            # PARALLEL STEP: Load and resize all images for this sheet at once
+            # Load and resize all images for this specific sheet
             with ThreadPoolExecutor() as executor:
                 tasks = [(path, img_w, img_h) for path in data["img_path_list"]]
                 resized_images = list(executor.map(self._load_and_resize_card, tasks))
@@ -403,13 +438,15 @@ class TTSBundleProcessor:
                 sheet_img.paste(img, (x, y))
                 img.close()
 
+            # Save locally to temp folder
             out_path = os.path.join(self.temp_path, f"{online_name}.webp")
             self.save_with_retry(sheet_img, out_path)
 
-            # Upload
+            # Upload Sheet
             if self.cfg["dont_upload"]:
                 data["uploaded_url"] = "file:///" + out_path
             else:
+                print(f"[UPLOADING] {online_name}...")
                 data["uploaded_url"] = self.upload_to_cloud(online_name, out_path)
 
     def save_with_retry(self, image, path):
