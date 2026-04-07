@@ -26,6 +26,7 @@ class TTSBundleProcessor:
     # Specific backs
     BACK_URLS = {
         "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
+        "Concealed": "https://steamusercontent-a.akamaihd.net/ugc/1941643328387229452/B0883940A23A9E63B99FF9CA6A344C3C57EC3257/",
         "Cthulhu-Deck": "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/",
         "Encounter": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/",
         "Enemy-Deck": "https://steamusercontent-a.akamaihd.net/ugc/2453969771999768294/54768C2E562D30E34B79EB7A94FCDC792E49FC28/",
@@ -145,6 +146,10 @@ class TTSBundleProcessor:
         # Check for suffix (Upgradesheets)
         if arkham_id.endswith("-c"):
             return self.BACK_URLS["Upgradesheet"]
+        
+        # Check for prefix (Concealed)
+        if arkham_id.startswith("HC"):
+            return self.BACK_URLS["Concealed"]
 
         # Check specific ID lists
         for category, id_list in self.SPECIAL_ID_MAPS.items():
