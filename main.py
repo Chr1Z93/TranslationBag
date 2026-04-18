@@ -28,8 +28,6 @@ class TTSBundleProcessor:
         # Encounter/Player are the "regular" backs
         "Encounter": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/",
         "Player": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/",
-        # Arkham Woods are used in multiple campaigns
-        "ArkhamWoods": "https://steamusercontent-a.akamaihd.net/ugc/10039895077102366513/A4B27CFD64422A1055CA9DBE662A366D9FCA200F/",
         # Artifacts are from TDC
         "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
         # Concealed Mini-Cards are from TSK
@@ -42,12 +40,14 @@ class TTSBundleProcessor:
         "Tarot": "https://steamusercontent-a.akamaihd.net/ugc/1697276706767619573/BC43BD2A94446B804BE325C7255D8179DEB2ABE8/",
         # Upgradesheets (Customizable) are from TSK
         "Upgradesheet": "https://steamusercontent-a.akamaihd.net/ugc/1814412497119682452/BD224FCE1980DBA38E5A687FABFD146AA1A30D0E/",
+        # Arkham Woods are used in multiple campaigns
+        "ArkhamWoods": "https://steamusercontent-a.akamaihd.net/ugc/10039895077102366513/A4B27CFD64422A1055CA9DBE662A366D9FCA200F/",
+        # Quarantine Zones are used in "The Blob that Ate Everything"
+        "QuarantineZone": "QuarantineZone-NotFound!",
     }
 
     # Groups of IDs that trigger specific logic
     SPECIAL_ID_MAPS = {
-        "ArkhamWoods": ["011" + str(i) for i in range(50, 56)]
-        + ["50033", "50034", "50035", "50036", "54021", "54022", "54023"],
         "Artifact": ["11552", "11582", "11611", "11638", "11672", "11688"],
         "Cthulhu-Deck": [str(i) for i in range(11705, 11716)],
         "Encounter": ["06028", "11016"],
@@ -67,6 +67,10 @@ class TTSBundleProcessor:
         ],
         "Player": ["085" + str(i) for i in range(87, 96)]
         + ["086" + str(i) for i in range(14, 23)],
+        "ArkhamWoods": ["011" + str(i) for i in range(50, 56)]
+        + ["50033", "50034", "50035", "50036", "54021", "54022", "54023"],
+        "QuarantineZone": ["850" + str(i) for i in range(14, 21)]
+        + ["89006", "89007", "89008", "89009"],
     }
 
     # Additions to the final name if suffix is present
