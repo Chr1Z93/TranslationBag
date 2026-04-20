@@ -20,7 +20,7 @@ from modules.gui import App
 
 class TTSBundleProcessor:
     # Constants
-    WHITELIST = ["EncounterCards", "PlayerCards", "Taboo", "Tarot"]
+    WHITELIST = ["EncounterCards", "PlayerCards", "Parallel", "Taboo", "Tarot"]
     BACK_SUFFIX = "-back"
 
     # Specific backs
