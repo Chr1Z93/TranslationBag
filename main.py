@@ -16,6 +16,7 @@ import cloudinary.uploader
 
 # Local module import
 from modules.gui import App
+from modules import tts_templates
 
 
 class TTSBundleProcessor:
@@ -78,6 +79,7 @@ class TTSBundleProcessor:
         "-p": "(Parallel)",
         "-pf": "(Parallel Front)",
         "-pb": "(Parallel Back)",
+        "-t-c": "Upgrade Sheet (Taboo)",
         "-t": "(Taboo)",
         "-c": "Upgrade Sheet",
     }
@@ -160,12 +162,7 @@ class TTSBundleProcessor:
 
         except Exception as e:
             print(f"Error fetching translation data: {e}")
-
-    def _load_json(self, path, default=None):
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return default if default is not None else {}
+            sys.exit(1)
 
     def resolve_back_url(self, arkham_id, data, translated_data):
         # Double-sided cards use the specific back from the sheet
@@ -257,7 +254,7 @@ class TTSBundleProcessor:
                         self.card_index[actual_id]["double_sided"] = True
 
                     self.card_index[arkham_id] = {
-                        "cycle_id": int(arkham_id[:2]),
+                        "cycle_name": int(arkham_id[:2]),
                         "file_path": os.path.join(root, file),
                         "double_sided": is_back,  # Will be updated for fronts in sorting phase
                         "category": folder_category,
@@ -319,7 +316,7 @@ class TTSBundleProcessor:
                     # Create a unique key for this specific combination
                     # Double-sided cards don't care about shared backs
                     group_key = (
-                        data["cycle_id"],
+                        data["cycle_name"],
                         back_url if sheet_type == "single" else "double-sided",
                     )
                     is_first_card = last_group_key == (None, None)
@@ -499,9 +496,9 @@ class TTSBundleProcessor:
 
     def build_tts_json(self):
         print("Building TTS Bag...")
-        bag_template = self._load_json("TTSBagTemplate.json")
-        card_template = bag_template["ObjectStates"][0]["ContainedObjects"][0]
-        contained_objects = []
+
+        # Nested dictionary to group cards by category and then by cycle
+        category_bags = {}
 
         for arkham_id, data in self.card_index.items():
             if arkham_id.endswith(self.BACK_SUFFIX):
@@ -519,7 +516,7 @@ class TTSBundleProcessor:
             translated_data = self.get_translated_data(arkham_id)
 
             # Create a copy of the template
-            new_card = copy.deepcopy(card_template)
+            new_card = copy.deepcopy(tts_templates.CARD)
 
             # Determine the back url
             if sheet_info["sheet_type"] == "single":
@@ -559,18 +556,60 @@ class TTSBundleProcessor:
                     "Type": 0,
                 }
             }
-            contained_objects.append(new_card)
+
+            # Initialize nested dictionary structure (Category -> Cycle)
+            if data["category"] not in category_bags:
+                category_bags[data["category"]] = {}
+
+            if data["cycle_name"] not in category_bags[data["category"]]:
+                category_bags[data["category"]][data["cycle_name"]] = []
+
+            category_bags[data["category"]][data["cycle_name"]].append(new_card)
+
+        # Build individual bags for each cycle and add them to the master bag
+        master_contained_objects = []
+
+        # Sorting types guarantees they appear in a consistent order inside the master bag
+        for category in sorted(category_bags.keys()):
+            new_category_bag = copy.deepcopy(tts_templates.BAG)
+            new_category_bag["Nickname"] = category
+            new_category_bag["GUID"] = f"{self.cfg['locale']}_bag_{category}"
+
+            category_contained_bags = []
+
+            # Sort the cycles so bags are neatly ordered chronologically inside the category bag
+            for cycle_name in sorted(category_bags[category].keys()):
+                new_cycle_bag = copy.deepcopy(tts_templates.BAG)
+                new_cycle_bag["Nickname"] = f"{cycle_name}"
+                new_cycle_bag["GUID"] = (
+                    f"{self.cfg['locale']}_bag_{category}_{cycle_name}"
+                )
+                new_cycle_bag["ContainedObjects"] = category_bags[category][cycle_name]
+                category_contained_bags.append(new_cycle_bag)
+
+            new_category_bag["ContainedObjects"] = category_contained_bags
+            master_contained_objects.append(new_category_bag)
 
         # Set bag data
+        master_bag = copy.deepcopy(tts_templates.BAG)
         date_stamp = datetime.now().strftime("%Y-%m-%d")
         bag_name = f"{date_stamp} - {self.cfg['locale'].upper()}"
-        bag_template["ObjectStates"][0]["Nickname"] = bag_name
-        bag_template["ObjectStates"][0]["GUID"] = f"{self.cfg['locale']}_bag"
-        bag_template["ObjectStates"][0]["ContainedObjects"] = contained_objects
+        master_bag["Nickname"] = bag_name
+        master_bag["GUID"] = f"{self.cfg['locale']}_bag"
+        master_bag["ContainedObjects"] = master_contained_objects
 
         # Final export
         out_name = f"{bag_name}.json"
-        self._save_json(bag_template, os.path.join(self.cfg["output_folder"], out_name))
+
+        saved_object = copy.deepcopy(tts_templates.SAVED_OBJECT)
+        saved_object["ObjectStates"] = [master_bag]
+        self._save_json(
+            saved_object,
+            os.path.join(
+                self.cfg["output_folder"],
+                out_name,
+            ),
+        )
         print(f"Export complete: {out_name}")
 
     def cleanup(self):
