@@ -14,9 +14,9 @@ class App:
 
         # definition of input fields, labels and expected type
         self.fields = [
-            ("Max Filesize Byte", "img_max_byte", int),
-            ("Image Width", "img_w", int),
-            ("Image Height", "img_h", int),
+            ("Max Filesize per Sheet [Byte]", "img_max_byte", int),
+            ("Image Width [px]", "img_w", int),
+            ("Image Height [px]", "img_h", int),
             ("Cloud Name", "cloud_name", str),
             ("API Key", "api_key", str),
             ("API Secret", "api_secret", str),
@@ -29,31 +29,31 @@ class App:
 
         # create input fields
         for i, (label_text, var_name, _) in enumerate(self.fields):
-            ttk.Label(self.root, text=label_text).grid(
+            ttk.Label(text=label_text).grid(
                 row=i, column=0, padx=10, pady=5, sticky=tk.E
             )
-            entry = ttk.Entry(self.root, justify="right")
+            entry = ttk.Entry(justify="right")
             entry.grid(row=i, column=1, padx=10, pady=5)
             self.entries[var_name] = entry
 
         # create source folder field and browse button
-        ttk.Label(self.root, text="Source Folder").grid(
+        ttk.Label(text="Source Folder").grid(
             row=field_count, column=0, padx=10, pady=5, sticky=tk.E
         )
         self.source_folder_entry = ttk.Entry(self.root)
         self.source_folder_entry.grid(row=field_count, column=1, padx=10, pady=5)
         self.browse_source_button = ttk.Button(
-            self.root, text="Browse", command=self.browse_source_folder
+            text="Browse", command=self.browse_source_folder
         )
         self.browse_source_button.grid(row=field_count, column=2, padx=10, pady=5)
 
-        ttk.Label(self.root, text="Bag Output Folder").grid(
+        ttk.Label(text="Bag Output Folder").grid(
             row=field_count + 1, column=0, padx=10, pady=5, sticky=tk.E
         )
         self.output_folder_entry = ttk.Entry(self.root)
         self.output_folder_entry.grid(row=field_count + 1, column=1, padx=10, pady=5)
         self.browse_output_button = ttk.Button(
-            self.root, text="Browse", command=self.browse_output_folder
+            text="Browse", command=self.browse_output_folder
         )
         self.browse_output_button.grid(row=field_count + 1, column=2, padx=10, pady=5)
 
@@ -85,6 +85,11 @@ class App:
             self.update_label,
             "100",
         )
+
+        self.contrast_reset_button = ttk.Button(
+            self.root, text="Reset Contrast", command=self.reset_contrast
+        )
+        self.contrast_reset_button.grid(row=field_count + 5, column=2, padx=10, pady=5)
 
         # Row + 5: Do Not Upload
         ttk.Label(self.root, text="Do not upload sheets to cloud").grid(
@@ -245,6 +250,12 @@ class App:
         if folder_selected:
             self.output_folder_entry.delete(0, tk.END)
             self.output_folder_entry.insert(0, folder_selected)
+
+    def reset_contrast(self):
+        """Helper function for the reset contrast button"""
+        self.cfg["img_contrast"] = 100
+        self.contrast_slider.set(100)
+        self.update_label(self.contrast_label, 100)
 
     def generate_default_output_path(self):
         if sys.platform == "darwin":  # macOS
