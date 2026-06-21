@@ -100,6 +100,7 @@ class TTSBundleProcessor:
         self.deck_id_counter = 0
         self.deck_offset = self.string_to_3_digits(locale)
         self.translation_data = {}
+        self.english_data = {}
 
         # Initialize Cloudinary
         cloudinary.config(
@@ -162,6 +163,28 @@ class TTSBundleProcessor:
 
         except Exception as e:
             print(f"Error fetching translation data: {e}")
+            sys.exit(1)
+
+    def load_english_data(self):
+        try:
+            response = requests.get(f"https://api.arkham.build/v1/cache/cards/en")
+            response.raise_for_status()
+
+            # Create a lookup map
+            for item in response.json()["data"]["all_card"]:
+                if "name" in item:
+                    key = item["id"]
+
+                    # Special handling for Hank (who uses different IDs in TTS)
+                    if key == "10016a":
+                        key = "10015-b1"
+                    elif key == "10016b":
+                        key = "10015-b2"
+
+                    self.english_data[key] = item
+
+        except Exception as e:
+            print(f"Error fetching english data: {e}")
             sys.exit(1)
 
     def resolve_back_url(self, arkham_id, data, translated_data):
@@ -492,6 +515,9 @@ class TTSBundleProcessor:
         if clean_id in self.translation_data:
             return self.translation_data[clean_id]
 
+        if clean_id in self.english_data:
+            return self.english_data[clean_id]
+
         return {}
 
     def build_tts_json(self):
@@ -624,6 +650,7 @@ if __name__ == "__main__":
 
     proc = TTSBundleProcessor(config)
     proc.load_translation_data()
+    proc.load_english_data()
     proc.scan_source()
     proc.organize_sheets()
     proc.process_images()
