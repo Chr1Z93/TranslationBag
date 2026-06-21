@@ -150,16 +150,15 @@ class TTSBundleProcessor:
 
             # Create a lookup map
             for item in response.json()["data"]["all_card"]:
-                if "name" in item:
-                    key = item["id"]
+                key = item["id"]
 
-                    # Special handling for Hank (who uses different IDs in TTS)
-                    if key == "10016a":
-                        key = "10015-b1"
-                    elif key == "10016b":
-                        key = "10015-b2"
+                # Special handling for Hank (who uses different IDs in TTS)
+                if key == "10016a":
+                    key = "10015-b1"
+                elif key == "10016b":
+                    key = "10015-b2"
 
-                    self.translation_data[key] = item
+                self.translation_data[key] = item
 
         except Exception as e:
             print(f"Error fetching translation data: {e}")
@@ -561,7 +560,10 @@ class TTSBundleProcessor:
                     name_suffix = " " + label
                     break
 
-            new_card["Nickname"] = translated_data.get("name", arkham_id) + name_suffix
+            new_card["Nickname"] = (
+                translated_data.get("name", translated_data.get("real_name", arkham_id))
+                + name_suffix
+            )
             new_card["Description"] = translated_data.get("subname", "")
 
             # Investigator / Act / Agenda handling
