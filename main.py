@@ -171,16 +171,15 @@ class TTSBundleProcessor:
 
             # Create a lookup map
             for item in response.json()["data"]["all_card"]:
-                if "name" in item:
-                    key = item["id"]
+                key = item["id"]
 
-                    # Special handling for Hank (who uses different IDs in TTS)
-                    if key == "10016a":
-                        key = "10015-b1"
-                    elif key == "10016b":
-                        key = "10015-b2"
+                # Special handling for Hank (who uses different IDs in TTS)
+                if key == "10016a":
+                    key = "10015-b1"
+                elif key == "10016b":
+                    key = "10015-b2"
 
-                    self.english_data[key] = item
+                self.english_data[key] = item
 
         except Exception as e:
             print(f"Error fetching english data: {e}")
