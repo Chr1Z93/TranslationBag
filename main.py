@@ -408,6 +408,12 @@ class TTSBundleProcessor:
         2. Stitches card images into sheets.
         3. Uploads sheets to Cloudinary (or uses local file:/// paths).
         """
+
+        # Setup Temp Directory
+        if os.path.exists(self.temp_path):
+            shutil.rmtree(self.temp_path)
+        os.makedirs(self.temp_path)
+
         # Handle Local Back Overrides
         local_backs_dir = os.path.join(self.cfg["source_folder"], "Backs")
         if os.path.exists(local_backs_dir):
@@ -420,7 +426,14 @@ class TTSBundleProcessor:
                         online_name = f"Back_{self.cfg['locale'].upper()}_{key}"
 
                         if self.cfg["dont_upload"]:
-                            self.BACK_URLS[key] = "file:///" + local_path
+                            # Define the destination path inside the temp folder
+                            dest_path = os.path.join(self.temp_path, f"{online_name}{ext}")
+
+                            # Copy the file
+                            shutil.copy2(local_path, dest_path)
+                            print(f"[INFO]     Copied local back to temp: {dest_path}")
+
+                            self.BACK_URLS[key] = "file:///" + dest_path
                         else:
                             # Check if already uploaded to save time/quota
                             existing_url = self.check_online_exists(online_name)
@@ -432,11 +445,6 @@ class TTSBundleProcessor:
                                     online_name, local_path
                                 )
                         break  # Found the file, move to next key
-
-        # Setup Temp Directory for Sheets
-        if os.path.exists(self.temp_path):
-            shutil.rmtree(self.temp_path)
-        os.makedirs(self.temp_path)
 
         img_w, img_h = self.cfg["img_w"], self.cfg["img_h"]
 
