@@ -378,6 +378,11 @@ class TTSBundleProcessor:
         path, img_w, img_h = args
         try:
             with Image.open(path) as img:
+                # Rotate horizontal images 90° clockwise
+                if img.size[0] > img.size[1]:
+                    img = img.rotate(-90, expand=True)
+
+                # Resize and convert to RGB
                 img = img.resize((img_w, img_h), Image.Resampling.LANCZOS).convert(
                     "RGB"
                 )
