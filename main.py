@@ -10,7 +10,7 @@ import sys
 
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageOps
 import cloudinary
 import cloudinary.uploader
 
@@ -373,14 +373,25 @@ class TTSBundleProcessor:
             "back_url": back_url,
         }
 
-    def _load_and_resize_card(self, args):
+    def _load_and_process_card(self, args):
         """Helper for parallel processing"""
         path, img_w, img_h = args
         try:
             with Image.open(path) as img:
-                return img.resize((img_w, img_h), Image.Resampling.LANCZOS).convert(
+                img = img.resize((img_w, img_h), Image.Resampling.LANCZOS).convert(
                     "RGB"
                 )
+
+                contrast_mult = self.cfg.get("img_contrast", 100)
+                if contrast_mult != 100:
+                    # Normalize image by cutting off 1% of extreme pixels
+                    img = ImageOps.autocontrast(img, cutoff=1)
+
+                    # Enhance contrast
+                    img = ImageEnhance.Contrast(img).enhance(contrast_mult / 100)
+
+                return img
+
         except Exception as e:
             print(f"Error loading {path}: {e}")
             return Image.new("RGB", (img_w, img_h), (255, 0, 0))  # Red error card
@@ -450,7 +461,7 @@ class TTSBundleProcessor:
             # Load and resize all images for this specific sheet
             with ThreadPoolExecutor() as executor:
                 tasks = [(path, img_w, img_h) for path in data["img_path_list"]]
-                resized_images = list(executor.map(self._load_and_resize_card, tasks))
+                resized_images = list(executor.map(self._load_and_process_card, tasks))
 
             # Assemble the sheet
             sheet_img = Image.new("RGB", (cols * img_w, rows * img_h))

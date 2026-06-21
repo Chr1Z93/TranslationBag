@@ -23,6 +23,7 @@ class App:
             ("Locale", "locale", str),
             ("Max Sheet Count", "max_sheet_count", int),
         ]
+        field_count = len(self.fields)
 
         self.entries = {}
 
@@ -37,30 +38,28 @@ class App:
 
         # create source folder field and browse button
         ttk.Label(self.root, text="Source Folder").grid(
-            row=len(self.fields), column=0, padx=10, pady=5, sticky=tk.E
+            row=field_count, column=0, padx=10, pady=5, sticky=tk.E
         )
         self.source_folder_entry = ttk.Entry(self.root)
-        self.source_folder_entry.grid(row=len(self.fields), column=1, padx=10, pady=5)
+        self.source_folder_entry.grid(row=field_count, column=1, padx=10, pady=5)
         self.browse_source_button = ttk.Button(
             self.root, text="Browse", command=self.browse_source_folder
         )
-        self.browse_source_button.grid(row=len(self.fields), column=2, padx=10, pady=5)
+        self.browse_source_button.grid(row=field_count, column=2, padx=10, pady=5)
 
         ttk.Label(self.root, text="Bag Output Folder").grid(
-                    row=len(self.fields) + 1, column=0, padx=10, pady=5, sticky=tk.E
-                )
+            row=field_count + 1, column=0, padx=10, pady=5, sticky=tk.E
+        )
         self.output_folder_entry = ttk.Entry(self.root)
-        self.output_folder_entry.grid(row=len(self.fields)+1, column=1, padx=10, pady=5)
+        self.output_folder_entry.grid(row=field_count + 1, column=1, padx=10, pady=5)
         self.browse_output_button = ttk.Button(
             self.root, text="Browse", command=self.browse_output_folder
         )
-        self.browse_output_button.grid(row=len(self.fields)+1, column=2, padx=10, pady=5)
+        self.browse_output_button.grid(row=field_count + 1, column=2, padx=10, pady=5)
 
-
-
-        # sliders
+        # Sliders
         self.count_per_sheet_slider, self.count_per_sheet_label = self.create_slider(
-            len(self.fields) + 2,
+            field_count + 2,
             "Image Count per Sheet",
             10,
             70,
@@ -70,30 +69,44 @@ class App:
         )
 
         self.quality_slider, self.quality_label = self.create_slider(
-            len(self.fields) + 3, "Image Quality", 1, 100, self.update_label, "90"
+            field_count + 3,
+            "Image Quality [%]",
+            1,
+            100,
+            self.update_label,
+            "90",
         )
 
-        # checkbox that disables uploading to cloud and checking uploaded sheets
+        self.contrast_slider, self.contrast_label = self.create_slider(
+            field_count + 4,
+            "Image Contrast [%]",
+            1,
+            200,
+            self.update_label,
+            "100",
+        )
+
+        # Row + 5: Do Not Upload
         ttk.Label(self.root, text="Do not upload sheets to cloud").grid(
-            row=len(self.fields) + 4, column=0, padx=10, sticky=tk.E
+            row=field_count + 5, column=0, padx=10, sticky=tk.E
         )
         self.dont_upload_var = tk.BooleanVar(value=True)
         self.dont_upload = tk.Checkbutton(variable=self.dont_upload_var).grid(
-                row=len(self.fields) + 4, column=1, padx=10, sticky=tk.W
-            )
+            row=field_count + 5, column=1, padx=10, sticky=tk.W
+        )
 
-        # checkbox for keeping the temp folder
+        # Row + 6: Keep Temp Folder
         ttk.Label(self.root, text="Keep temp folder with cardsheets").grid(
-            row=len(self.fields) + 5, column=0, padx=10, sticky=tk.E
+            row=field_count + 6, column=0, padx=10, sticky=tk.E
         )
         self.keep_temp_folder_var = tk.BooleanVar(value=True)
         self.keep_temp_folder = tk.Checkbutton(variable=self.keep_temp_folder_var).grid(
-                row=len(self.fields) + 5, column=1, padx=10, sticky=tk.W
-            )
+            row=field_count + 6, column=1, padx=10, sticky=tk.W
+        )
 
-        # submit button
+        # Row + 7: Submit button
         self.submit_button = ttk.Button(self.root, text="Submit", command=self.submit)
-        self.submit_button.grid(row=len(self.fields) + 6, columnspan=3, pady=10)
+        self.submit_button.grid(row=field_count + 7, columnspan=3, pady=10)
 
         self.load_settings()
         self.start_app()
@@ -149,7 +162,9 @@ class App:
         self.source_folder_entry.insert(0, self.cfg.get("source_folder", ""))
 
         # load settings for output folder
-        self.output_folder_entry.insert(0, self.cfg.get("output_folder", self.generate_default_output_path()))
+        self.output_folder_entry.insert(
+            0, self.cfg.get("output_folder", self.generate_default_output_path())
+        )
 
         # load settings for checkboxes
         self.keep_temp_folder_var.set(self.cfg.get("keep_temp_folder", True))
@@ -162,6 +177,8 @@ class App:
         )
         self.quality_slider.set(self.cfg.get("img_quality", 90))
         self.update_label(self.quality_label, self.cfg.get("img_quality", 90))
+        self.contrast_slider.set(self.cfg.get("img_contrast", 100))
+        self.update_label(self.contrast_label, self.cfg.get("img_contrast", 100))
 
     def submit(self):
         """Reads the form and saves settings to config file before continuing"""
@@ -199,6 +216,7 @@ class App:
             self.cfg["img_count_per_sheet"] = (
                 round(self.count_per_sheet_slider.get() / 10) * 10
             )
+            self.cfg["img_contrast"] = int(self.contrast_slider.get())
 
             # get values from checkboxes
             self.cfg["keep_temp_folder"] = bool(self.keep_temp_folder_var.get())
@@ -235,11 +253,7 @@ class App:
                 "Library",
             )
         elif sys.platform == "linux":  # linux
-            base_folder = os.path.join(
-                os.path.expanduser("~"),
-                ".local",
-                "share"
-            )
+            base_folder = os.path.join(os.path.expanduser("~"), ".local", "share")
         else:  # windows
             base_folder = os.path.join(
                 os.environ["USERPROFILE"],
