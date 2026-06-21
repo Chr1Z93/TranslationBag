@@ -426,10 +426,10 @@ class TTSBundleProcessor:
                         online_name = f"Back_{self.cfg['locale'].upper()}_{key}"
 
                         if self.cfg["dont_upload"]:
-                            # Define the destination path inside the temp folder
-                            dest_path = os.path.join(self.temp_path, f"{online_name}{ext}")
-
-                            # Copy the file
+                            # Copy the back to the temp folder
+                            dest_path = os.path.join(
+                                self.temp_path, f"{online_name}{ext}"
+                            )
                             shutil.copy2(local_path, dest_path)
                             print(f"[INFO]     Copied local back to temp: {dest_path}")
 
@@ -592,8 +592,12 @@ class TTSBundleProcessor:
             )
             new_card["Description"] = translated_data.get("subname", "")
 
-            # Investigator / Act / Agenda handling
-            if translated_data.get("type_code") in {"investigator", "act", "agenda"}:
+            # Set SidewaysCard property if necessary
+            if translated_data.get("type_code") in {
+                "investigator",
+                "act",
+                "agenda",
+            } or arkham_id in {"85037", "85038"}:
                 new_card["SidewaysCard"] = True
 
             # Image data
