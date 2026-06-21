@@ -101,6 +101,7 @@ class TTSBundleProcessor:
         self.deck_offset = self.string_to_3_digits(locale)
         self.translation_data = {}
         self.english_data = {}
+        self.sheet_count_reached = False
 
         # Initialize Cloudinary
         cloudinary.config(
@@ -415,7 +416,7 @@ class TTSBundleProcessor:
                 for ext in [".png", ".jpg", ".jpeg", ".webp"]:
                     local_path = os.path.join(local_backs_dir, f"{key}{ext}")
                     if os.path.exists(local_path):
-                        print(f"[INFO] Local back found: {key} -> {local_path}")
+                        print(f"[INFO]     Local back found: {key} -> {local_path}")
                         online_name = f"Back_{self.cfg['locale'].upper()}_{key}"
 
                         if self.cfg["dont_upload"]:
@@ -442,8 +443,9 @@ class TTSBundleProcessor:
         # Process Card Sheets
         for d_id, data in self.sheet_parameters.items():
             if d_id > self.cfg["max_sheet_count"]:
+                self.sheet_count_reached = True
                 print(
-                    f"[LIMIT] Reached max_sheet_count ({self.cfg['max_sheet_count']})"
+                    f"[LIMIT]    Reached max_sheet_count ({self.cfg['max_sheet_count']})"
                 )
                 break
 
@@ -547,9 +549,10 @@ class TTSBundleProcessor:
             # Card Logic
             sheet_info = self.sheet_parameters.get(data["deck_id"])
             if not sheet_info or "uploaded_url" not in sheet_info:
-                print(
-                    f"[WARNING] Skipping {arkham_id}: No info / URL found for {data['deck_id']}"
-                )
+                if not self.sheet_count_reached:
+                    print(
+                        f"[WARNING] Skipping {arkham_id}: No info / URL found for deck id \"{data['deck_id']}\""
+                    )
                 continue
 
             # Get data from arkham.build API with translated fields
