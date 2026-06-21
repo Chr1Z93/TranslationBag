@@ -565,7 +565,7 @@ class TTSBundleProcessor:
             new_card["Description"] = translated_data.get("subname", "")
 
             # Investigator handling
-            if translated_data.get("type_code") == "investigator":
+            if translated_data.get("type_code") in {"investigator", "act", "agenda"}:
                 new_card["SidewaysCard"] = True
 
             # Image data
