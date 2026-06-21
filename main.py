@@ -564,7 +564,7 @@ class TTSBundleProcessor:
             new_card["Nickname"] = translated_data.get("name", arkham_id) + name_suffix
             new_card["Description"] = translated_data.get("subname", "")
 
-            # Investigator handling
+            # Investigator / Act / Agenda handling
             if translated_data.get("type_code") in {"investigator", "act", "agenda"}:
                 new_card["SidewaysCard"] = True
 
