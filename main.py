@@ -19,6 +19,11 @@ from modules.gui import App
 from modules import tts_templates
 
 
+def make_id_range(start: int, end: int) -> list[str]:
+    """Generates a list of string IDs from start to end inclusive."""
+    return [str(i).zfill(5) for i in range(start, end + 1)]
+
+
 class TTSBundleProcessor:
     # Constants
     WHITELIST = ["EncounterCards", "PlayerCards", "Tarot"]
@@ -29,12 +34,8 @@ class TTSBundleProcessor:
         # Encounter/Player are the "regular" backs
         "Encounter": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940351785/F64D8EFB75A9E15446D24343DA0A6EEF5B3E43DB/",
         "Player": "https://steamusercontent-a.akamaihd.net/ugc/2342503777940352139/A2D42E7E5C43D045D72CE5CFC907E4F886C8C690/",
-        # Artifacts are from TDC
-        "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
         # Concealed Mini-Cards are from TSK
         "Concealed": "https://steamusercontent-a.akamaihd.net/ugc/1941643328387229452/B0883940A23A9E63B99FF9CA6A344C3C57EC3257/",
-        # Cthulhu-Deck is from TDC
-        "Cthulhu-Deck": "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/",
         # Enemy-Deck is from FHV
         "Enemy-Deck": "https://steamusercontent-a.akamaihd.net/ugc/2453969771999768294/54768C2E562D30E34B79EB7A94FCDC792E49FC28/",
         # Tarot cards are from RtTCU
@@ -45,12 +46,19 @@ class TTSBundleProcessor:
         "ArkhamWoods": "https://steamusercontent-a.akamaihd.net/ugc/10039895077102366513/A4B27CFD64422A1055CA9DBE662A366D9FCA200F/",
         # Quarantine Zones are used in "The Blob that Ate Everything"
         "QuarantineZone": "QuarantineZone-NotFound!",
+        # TDC-specifics
+        "Artifact": "https://steamusercontent-a.akamaihd.net/ugc/62595146532712476/4F1C745A4BD1E7F5EA6DA68E2D81F59AC2817D22/",
+        "CrumblingArchives": "https://steamusercontent-a.akamaihd.net/ugc/62595146532732322/D87325A19217AE79F834ACF2E3FE368B031A2B72/",
+        "Cthulhu-Deck": "https://steamusercontent-a.akamaihd.net/ugc/62595146532775345/8D860CB7316FDC55C2506F6E5A3A56810AB440E9/",
+        "SeaFloor": "https://steamusercontent-a.akamaihd.net/ugc/62595225072293872/86DC135C5D31C36DD0419CDE7BEB87C6A3209641/",
+        "SigilCarvedAlcove": "https://steamusercontent-a.akamaihd.net/ugc/62595225072346840/0877C24923F31DBF5A594D8F1A89F2BC8492CD9F/",
+        "Summit": "https://steamusercontent-a.akamaihd.net/ugc/62595225072355732/7666C814F88E494B4548306EFB3F22875F6A8701/",
+        "TreacherousPath": "https://steamusercontent-a.akamaihd.net/ugc/62595225072361752/CB43202A2C423391F26D1E5A19522D02FDB3E6EB/",
+        "VaultChamber": "https://steamusercontent-a.akamaihd.net/ugc/62595225072369279/27E0014B9553582BF297A7A7229C45C2D76377A3/",
     }
 
-    # Groups of IDs that trigger specific logic
+    # Groups of IDs that trigger specific back logic
     SPECIAL_ID_MAPS = {
-        "Artifact": ["11552", "11582", "11611", "11638", "11672", "11688"],
-        "Cthulhu-Deck": [str(i) for i in range(11705, 11716)],
         "Encounter": ["06028", "11016"],
         "Enemy-Deck": [
             "10643",
@@ -66,12 +74,24 @@ class TTSBundleProcessor:
             "10647c",
             "10648",
         ],
-        "Player": ["085" + str(i) for i in range(87, 96)]
-        + ["086" + str(i) for i in range(14, 23)],
-        "ArkhamWoods": ["011" + str(i) for i in range(50, 56)]
-        + ["50033", "50034", "50035", "50036", "54021", "54022", "54023"],
-        "QuarantineZone": ["850" + str(i) for i in range(14, 21)]
-        + ["89006", "89007", "89008", "89009"],
+        "Player": make_id_range(8587, 8595) + make_id_range(8614, 8622),
+        "ArkhamWoods": make_id_range(1150, 1155)
+        + make_id_range(50033, 50036)
+        + make_id_range(54021, 54023),
+        "QuarantineZone": make_id_range(85014, 85020) + make_id_range(89006, 89009),
+        # TDC-specifics
+        "Artifact": ["11552", "11582", "11611", "11638", "11672", "11688"],
+        "Cthulhu-Deck": make_id_range(11705, 11715),
+        "CrumblingArchives": make_id_range(11624, 11629),
+        "SeaFloor": make_id_range(11541, 11548),
+        "SigilCarvedAlcove": make_id_range(11677, 11681),
+        "Summit": make_id_range(11649, 11661),
+        "TreacherousPath": make_id_range(11521, 11530),
+        "VaultChamber": make_id_range(11596, 11603),
+    }
+
+    TDC_TASK_IDS = {
+        str(i) + suffix for i in range(11753, 11761) for suffix in ("a", "b")
     }
 
     # Additions to the final name if suffix is present
@@ -281,6 +301,26 @@ class TTSBundleProcessor:
                         "double_sided": is_back,  # Will be updated for fronts in sorting phase
                         "category": folder_category,
                     }
+
+                    # Handling for TDC tasks (separate copy with sides switched)
+                    if arkham_id in self.TDC_TASK_IDS:
+                        # Determine the flipped appendix
+                        if arkham_id.endswith("a"):
+                            flipped_id = arkham_id[:-1] + "b"  # 'a' -> 'b'
+                        else:
+                            flipped_id = arkham_id[:-1] + "a"  # 'b' -> 'a'
+
+                        # Append the back suffix to the flipped ID (e.g., "11753b-back")
+                        back_id = flipped_id + self.BACK_SUFFIX
+
+                        # Create the second entry as a flipped "-back" version
+                        self.card_index[back_id] = {
+                            "cycle_name": int(arkham_id[:2]),
+                            "file_path": os.path.join(root, file),
+                            "double_sided": True,
+                            "category": folder_category,
+                        }
+
                 except Exception as e:
                     print(f"Skip {file}: {e}")
 
