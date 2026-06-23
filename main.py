@@ -21,7 +21,7 @@ from modules import tts_templates
 
 class TTSBundleProcessor:
     # Constants
-    WHITELIST = ["EncounterCards", "PlayerCards", "Parallel", "Taboo", "Tarot"]
+    WHITELIST = ["EncounterCards", "PlayerCards", "Taboo", "Tarot"]
     BACK_SUFFIX = "-back"
 
     # Specific backs
