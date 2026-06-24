@@ -501,11 +501,16 @@ class TTSBundleProcessor:
                                     online_name, local_path
                                 )
                         break  # Found the file, move to next key
-
-        img_w, img_h = self.cfg["img_w"], self.cfg["img_h"]
-
+        
         # Process Card Sheets
         for d_id, data in self.sheet_parameters.items():
+            # Dimensions
+            img_w, img_h = 750, 1050
+
+            # RtTCU Tarot handling
+            if data["back_url"] == self.BACK_URLS["Tarot"]:
+                img_w, img_h = 800, 1400
+
             if d_id > self.cfg["max_sheet_count"]:
                 self.sheet_count_reached = True
                 print(

@@ -15,8 +15,6 @@ class App:
         # definition of input fields, labels and expected type
         self.fields = [
             ("Max Filesize per Sheet [Byte]", "img_max_byte", int),
-            ("Image Width [px]", "img_w", int),
-            ("Image Height [px]", "img_h", int),
             ("Cloud Name", "cloud_name", str),
             ("API Key", "api_key", str),
             ("API Secret", "api_secret", str),
