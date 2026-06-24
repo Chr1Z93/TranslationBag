@@ -642,9 +642,16 @@ class TTSBundleProcessor:
 
             # Name / Description
             name_suffix = ""
+
+            # Append XP
+            xp = translated_data.get("xp", 0)
+            if xp > 0:
+                name_suffix += f" ({xp})"
+
+            # Append special suffix
             for suffix, label in self.SUFFIX_MAP.items():
                 if arkham_id.endswith(suffix):
-                    name_suffix = " " + label
+                    name_suffix += f" {label}"
                     break
 
             new_card["Nickname"] = (
