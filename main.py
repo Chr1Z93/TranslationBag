@@ -295,8 +295,14 @@ class TTSBundleProcessor:
                     if is_back and actual_id in self.card_index:
                         self.card_index[actual_id]["double_sided"] = True
 
+                    # RtTCU Tarot handling
+                    if arkham_id.startswith("TAR"):
+                        cycle_name = "TAR"
+                    else:
+                        cycle_name = arkham_id[:2]
+
                     self.card_index[arkham_id] = {
-                        "cycle_name": int(arkham_id[:2]),
+                        "cycle_name": cycle_name,
                         "file_path": os.path.join(root, file),
                         "double_sided": is_back,  # Will be updated for fronts in sorting phase
                         "category": folder_category,
@@ -315,7 +321,7 @@ class TTSBundleProcessor:
 
                         # Create the second entry as a flipped "-back" version
                         self.card_index[back_id] = {
-                            "cycle_name": int(arkham_id[:2]),
+                            "cycle_name": cycle_name,
                             "file_path": os.path.join(root, file),
                             "double_sided": True,
                             "category": folder_category,
