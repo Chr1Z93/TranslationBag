@@ -144,7 +144,7 @@ class TTSBundleProcessor:
         for filename in os.listdir(self.local_backs_path):
             name_part = os.path.splitext(filename)[0]
             if name_part in self.BACK_URLS:
-                full_path = os.path.join(self.local_backs_path, filename)
+                full_path = os.path.join(self.temp_path, filename)
                 # Store the local path temporarily
                 self.BACK_URLS[name_part] = full_path
                 print(f"  -> Found local override for {name_part}")
