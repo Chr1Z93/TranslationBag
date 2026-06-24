@@ -284,6 +284,14 @@ class TTSBundleProcessor:
             if not folder_category:
                 continue
 
+            # Find the folder name directly after the folder_category
+            category_index = path_parts.index(folder_category)
+            
+            # Check if there is a subfolder after the category, otherwise fallback to a default
+            folder_cycle_name = None
+            if category_index + 1 < len(path_parts):
+                folder_cycle_name = path_parts[category_index + 1]
+
             for file in files:
                 if not file.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                     continue
@@ -295,9 +303,11 @@ class TTSBundleProcessor:
                     if is_back and actual_id in self.card_index:
                         self.card_index[actual_id]["double_sided"] = True
 
-                    # RtTCU Tarot handling
+                    # Cycle Name logic (use folder if possible, fallback to ID prefix)
                     if arkham_id.startswith("TAR"):
-                        cycle_name = "TAR"
+                        cycle_name = "TAR" # RtTCU Tarot handling
+                    elif folder_cycle_name:
+                        cycle_name = folder_cycle_name
                     else:
                         cycle_name = arkham_id[:2]
 
