@@ -193,14 +193,16 @@ class TTSBundleProcessor:
             # Create a lookup map
             for item in response.json()["data"]["all_card"]:
                 key = item["id"]
-
-                # Special handling for Hank (who uses different IDs in TTS)
-                if key == "10016a":
-                    key = "10015-b1"
-                elif key == "10016b":
-                    key = "10015-b2"
-
                 self.english_data[key] = item
+
+            # Special handling for Hank (who uses different IDs in TTS)
+            self.english_data["10015-b1"] = self.english_data.get("10016a")
+            self.english_data["10015-b2"] = self.english_data.get("10016b")
+
+            # Special handling for some Written in Rock locations
+            for id in ["10512", "10513", "10514"]:
+                self.english_data[id + "a"] = self.english_data.get(id)
+                self.english_data[id + "b"] = self.english_data.get(id)
 
         except Exception as e:
             print(f"Error fetching english data: {e}")
@@ -211,13 +213,8 @@ class TTSBundleProcessor:
         if data.get("double_sided"):
             back_id = f"{arkham_id}{self.BACK_SUFFIX}"
 
-            # Convert back_id into its sort tuple format
-            current_tuple = self.sort_key((back_id,))
             for s_param in self.sheet_parameters.values():
-                if (
-                    s_param["sheet_type"] == "back"
-                    and s_param["start_tuple"] <= current_tuple <= s_param["end_tuple"]
-                ):
+                if s_param["sheet_type"] == "back" and back_id in s_param["id_list"]:
                     return s_param.get("uploaded_url", self.BACK_URLS["Player"])
 
         # Check for suffix (Upgradesheets from TSK)
@@ -513,17 +510,18 @@ class TTSBundleProcessor:
 
                 if current_batch:
                     self._create_sheet_param(
-                        current_batch, sheet_type, last_group_key[1]
+                        current_batch,
+                        sheet_type,
+                        last_group_key[1],
                     )
 
     def _create_sheet_param(self, batch, sheet_type, back_url):
         self.deck_id_counter += 1
         self.sheet_parameters[self.deck_id_counter] = {
             "img_path_list": [d["file_path"] for _, d in batch],
+            "id_list": [arkham_id for arkham_id, _ in batch],
             "start_id": batch[0][0],
-            "start_tuple": self.sort_key((batch[0][0],)),
             "end_id": batch[-1][0],
-            "end_tuple": self.sort_key((batch[-1][0],)),
             "sheet_type": sheet_type,
             "card_count": len(batch),
             "back_url": back_url,
