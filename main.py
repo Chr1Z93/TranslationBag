@@ -210,10 +210,13 @@ class TTSBundleProcessor:
         # Double-sided cards use the specific back from the sheet
         if data.get("double_sided"):
             back_id = f"{arkham_id}{self.BACK_SUFFIX}"
+
+            # Convert back_id into its sort tuple format
+            current_tuple = self.sort_key((back_id,))
             for s_param in self.sheet_parameters.values():
                 if (
                     s_param["sheet_type"] == "back"
-                    and s_param["start_id"] <= back_id <= s_param["end_id"]
+                    and s_param["start_tuple"] <= current_tuple <= s_param["end_tuple"]
                 ):
                     return s_param.get("uploaded_url", self.BACK_URLS["Player"])
 
@@ -518,7 +521,9 @@ class TTSBundleProcessor:
         self.sheet_parameters[self.deck_id_counter] = {
             "img_path_list": [d["file_path"] for _, d in batch],
             "start_id": batch[0][0],
+            "start_tuple": self.sort_key((batch[0][0],)),
             "end_id": batch[-1][0],
+            "end_tuple": self.sort_key((batch[-1][0],)),
             "sheet_type": sheet_type,
             "card_count": len(batch),
             "back_url": back_url,
