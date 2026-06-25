@@ -130,25 +130,6 @@ class TTSBundleProcessor:
             api_secret=self.cfg["api_secret"],
         )
 
-        # Maybe load local versions of special card backs
-        self.local_backs_path = os.path.join(self.cfg["source_folder"], "Backs")
-        self._load_local_backs()
-
-    def _load_local_backs(self):
-        """Overrides hardcoded BACK_URLS if a file with the same name exists locally."""
-        if not os.path.exists(self.local_backs_path):
-            return
-
-        print(f"Checking for local backs in: {self.local_backs_path}")
-        # Look for files like "Encounter.png", "Player.jpg", etc.
-        for filename in os.listdir(self.local_backs_path):
-            name_part = os.path.splitext(filename)[0]
-            if name_part in self.BACK_URLS:
-                full_path = os.path.join(self.temp_path, filename)
-                # Store the local path temporarily
-                self.BACK_URLS[name_part] = "file:///" + full_path
-                print(f"  -> Found local override for {name_part}")
-
     def string_to_3_digits(self, input_string):
         """Consistently turns any string into a number between 100 and 999."""
         # Create a deterministic hex hash of the string
@@ -555,49 +536,59 @@ class TTSBundleProcessor:
             print(f"Error loading {path}: {e}")
             return Image.new("RGB", (img_w, img_h), (255, 0, 0))  # Red error card
 
-    def process_images(self):
-        """
-        1. Uploads local back overrides if they exist.
-        2. Stitches card images into sheets.
-        3. Uploads sheets to Cloudinary (or uses local file:/// paths).
-        """
-
+    def ensure_temp_path(self):
         # Setup Temp Directory
         if os.path.exists(self.temp_path):
             shutil.rmtree(self.temp_path)
         os.makedirs(self.temp_path)
 
+    def handle_local_backs(self):
+        """Uploads local back overrides if they exist."""
+
+        # Maybe load local versions of special card backs
+        self.local_backs_path = os.path.join(self.cfg["source_folder"], "Backs")
+
         # Handle Local Back Overrides
-        local_backs_dir = os.path.join(self.cfg["source_folder"], "Backs")
-        if os.path.exists(local_backs_dir):
-            for key in list(self.BACK_URLS.keys()):
-                # Look for any common image extension
-                for ext in [".png", ".jpg", ".jpeg", ".webp"]:
-                    local_path = os.path.join(local_backs_dir, f"{key}{ext}")
-                    if os.path.exists(local_path):
-                        print(f"[INFO]     Local back found: {key} -> {local_path}")
-                        online_name = f"Back_{self.cfg['locale'].upper()}_{key}"
+        if not os.path.exists(self.local_backs_path):
+            return
 
-                        if self.cfg["dont_upload"]:
-                            # Copy the back to the temp folder
-                            dest_path = os.path.join(
-                                self.temp_path, f"{online_name}{ext}"
-                            )
-                            shutil.copy2(local_path, dest_path)
-                            print(f"[INFO]     Copied local back to temp: {dest_path}")
+        print(f"Checking for local backs in: {self.local_backs_path}")
 
-                            self.BACK_URLS[key] = "file:///" + dest_path
-                        else:
-                            # Check if already uploaded to save time/quota
-                            existing_url = self.check_online_exists(online_name)
-                            if existing_url:
-                                self.BACK_URLS[key] = existing_url
-                            else:
-                                print(f"[UPLOADING] {online_name}...")
-                                self.BACK_URLS[key] = self.upload_to_cloud(
-                                    online_name, local_path
-                                )
-                        break  # Found the file, move to next key
+        # Supported image extensions
+        extensions = [".png", ".jpg", ".jpeg", ".webp"]
+
+        for key in list(self.BACK_URLS.keys()):
+            for ext in extensions:
+                local_path = os.path.join(self.local_backs_path, f"{key}{ext}")
+                if not os.path.exists(local_path):
+                    continue
+
+                print(f"[INFO]     Local back found: {key} -> {local_path}")
+                online_name = f"Back_{self.cfg['locale'].upper()}_{key}"
+
+                if self.cfg["dont_upload"]:
+                    # Copy the back to the temp folder
+                    dest_path = os.path.join(self.temp_path, f"{online_name}{ext}")
+                    shutil.copy2(local_path, dest_path)
+                    print(f"[INFO]     Copied local back to temp: {dest_path}")
+                    self.BACK_URLS[key] = "file:///" + dest_path
+                else:
+                    # Check if already uploaded to save time/quota
+                    existing_url = self.check_online_exists(online_name)
+                    if existing_url:
+                        self.BACK_URLS[key] = existing_url
+                    else:
+                        print(f"[UPLOADING] {online_name}...")
+                        self.BACK_URLS[key] = self.upload_to_cloud(
+                            online_name, local_path
+                        )
+                break  # Found the file, move to next key
+
+    def process_images(self):
+        """
+        1. Stitches card images into sheets.
+        2. Uploads sheets to Cloudinary (or uses local file:/// paths).
+        """
 
         # Process Card Sheets
         for d_id, data in self.sheet_parameters.items():
@@ -850,6 +841,8 @@ if __name__ == "__main__":
     proc.load_english_data()
     proc.scan_source()
     proc.organize_sheets()
+    proc.ensure_temp_path()
+    proc.handle_local_backs()
     proc.process_images()
     proc.build_tts_json()
     proc.cleanup()
