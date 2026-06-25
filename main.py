@@ -176,8 +176,27 @@ class TTSBundleProcessor:
                 key = item["id"]
                 self.english_data[key] = item
 
-            # Special handling for Sickening Reality enemies
-            for id in ["03065b", "03066b", "03067b", "03068b", "03069b"]:
+            # Special handling for some double-sided cards
+            for id in [
+                "03065b",
+                "03066b",
+                "03067b",
+                "03068b",
+                "03069b",
+                "03076a",
+                "03182b",
+                "03221b",
+                "03321a",
+                "03322a",
+                "03323a",
+                "04117a",
+                "04118a",
+                "04128a",
+                "04130a",
+                "04137a",
+                "05286a",
+                "05288a",
+            ]:
                 self.english_data[id[:-1]] = self.english_data.get(id)
 
             # Special handling for Hank (who uses different IDs in TTS)
