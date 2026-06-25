@@ -796,7 +796,7 @@ class TTSBundleProcessor:
                 new_cycle_bag = copy.deepcopy(tts_templates.BAG)
                 new_cycle_bag["Nickname"] = f"{cycle_name}"
                 new_cycle_bag["GUID"] = (
-                    f"{self.cfg['locale']}_bag_{category}_{cycle_name}"
+                    f"{self.cfg['locale']}_bag_{category}_{cycle_name}".replace(" ", "")
                 )
                 new_cycle_bag["ContainedObjects"] = category_bags[category][cycle_name]
                 category_contained_bags.append(new_cycle_bag)
