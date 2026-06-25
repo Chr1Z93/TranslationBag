@@ -146,7 +146,7 @@ class TTSBundleProcessor:
             if name_part in self.BACK_URLS:
                 full_path = os.path.join(self.temp_path, filename)
                 # Store the local path temporarily
-                self.BACK_URLS[name_part] = full_path
+                self.BACK_URLS[name_part] = "file:///" + full_path
                 print(f"  -> Found local override for {name_part}")
 
     def string_to_3_digits(self, input_string):
@@ -267,10 +267,31 @@ class TTSBundleProcessor:
 
     def sort_key(self, item):
         key = item[0]
+
+        # Identify if it's a back
+        is_back = key.endswith(self.BACK_SUFFIX)
+        clean_key = key.removesuffix(self.BACK_SUFFIX)
+
+        # Identify and extract the parallel modifier (-p, -pf, -pb)
+        modifier = ""
+        for suffix in ["-pf", "-pb", "-p"]:
+            if clean_key.endswith(suffix):
+                modifier = suffix
+                clean_key = clean_key.removesuffix(suffix)
+                break
+
+        # Run regex on the true base numeric ID (e.g., "01001" or "11753a")
         pattern = r"^(\d{5})([a-z])?(?:-([a-z]\d+))?$"
-        match = re.match(pattern, key)
+        match = re.match(pattern, clean_key)
         if match:
-            return (match.group(1), match.group(2) or "", match.group(3) or "")
+            # Group components: (Base ID, 'a/b/c' version, parallel modifier, back flag)
+            return (
+                match.group(1),
+                match.group(2) or "",
+                modifier,
+                (1 if is_back else 0),
+                match.group(3) or "",
+            )
         return (key,)
 
     def scan_source(self):
@@ -286,7 +307,7 @@ class TTSBundleProcessor:
 
             # Find the folder name directly after the folder_category
             category_index = path_parts.index(folder_category)
-            
+
             # Check if there is a subfolder after the category, otherwise fallback to a default
             folder_cycle_name = None
             if category_index + 1 < len(path_parts):
@@ -305,7 +326,7 @@ class TTSBundleProcessor:
 
                     # Cycle Name logic (use folder if possible, fallback to ID prefix)
                     if arkham_id.startswith("TAR"):
-                        cycle_name = "TAR" # RtTCU Tarot handling
+                        cycle_name = "TAR"  # RtTCU Tarot handling
                     elif folder_cycle_name:
                         cycle_name = folder_cycle_name
                     else:
@@ -349,6 +370,79 @@ class TTSBundleProcessor:
         if not self.card_index:
             print("[ERROR] No valid card images found in the source folder.")
             sys.exit(1)
+
+        # Parallel Investigators Mix & Match Logic
+        parallel_entries = {}
+        parallel_ids_to_remove = set()
+
+        for arkham_id in self.card_index:
+            if arkham_id.endswith(self.BACK_SUFFIX):
+                continue
+
+            if not arkham_id.startswith("90"):
+                continue
+
+            p_back = self.card_index.get(f"{arkham_id}{self.BACK_SUFFIX}")
+            if not p_back:
+                continue
+
+            translated_data = self.get_translated_data(arkham_id)
+            reg_id = translated_data.get("alternate_of_code")
+
+            if reg_id:
+                p_front = self.card_index.get(arkham_id)
+                reg_front = self.card_index.get(reg_id)
+                reg_back = self.card_index.get(f"{reg_id}{self.BACK_SUFFIX}")
+
+                if not reg_front or not reg_back:
+                    continue
+
+                # Mark original parallel IDs for deletion
+                parallel_ids_to_remove.add(arkham_id)
+                parallel_ids_to_remove.add(f"{arkham_id}{self.BACK_SUFFIX}")
+
+                # Full Parallel (-p)
+                parallel_entries[f"{reg_id}-p"] = {
+                    **p_front,  # type: ignore
+                    "cycle_name": "Parallel",
+                    "double_sided": True,
+                }
+                parallel_entries[f"{reg_id}-p{self.BACK_SUFFIX}"] = {
+                    **p_back,
+                    "cycle_name": "Parallel",
+                    "double_sided": True,
+                }
+
+                # Parallel Front (-pf)
+                parallel_entries[f"{reg_id}-pf"] = {
+                    **p_front,  # type: ignore
+                    "cycle_name": "Parallel",
+                    "double_sided": True,
+                }
+                parallel_entries[f"{reg_id}-pf{self.BACK_SUFFIX}"] = {
+                    **reg_back,
+                    "cycle_name": "Parallel",
+                    "double_sided": True,
+                }
+
+                # Parallel Back (-pb)
+                parallel_entries[f"{reg_id}-pb"] = {
+                    **reg_front,
+                    "cycle_name": "Parallel",
+                    "double_sided": True,
+                }
+                parallel_entries[f"{reg_id}-pb{self.BACK_SUFFIX}"] = {
+                    **p_back,
+                    "cycle_name": "Parallel",
+                    "double_sided": True,
+                }
+
+        # Merge the generated combinations back into the primary index
+        self.card_index.update(parallel_entries)
+
+        # Clean up the raw parallel IDs
+        for p_id in parallel_ids_to_remove:
+            self.card_index.pop(p_id, None)
 
     def organize_sheets(self):
         """Groups cards into sheet batches separated by WHITELIST and Back URLs."""
@@ -501,7 +595,7 @@ class TTSBundleProcessor:
                                     online_name, local_path
                                 )
                         break  # Found the file, move to next key
-        
+
         # Process Card Sheets
         for d_id, data in self.sheet_parameters.items():
             # Dimensions
