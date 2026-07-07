@@ -7,6 +7,7 @@ import re
 import requests
 import shutil
 import sys
+from tkinter import messagebox
 
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -28,6 +29,13 @@ class TTSBundleProcessor:
     # Constants
     WHITELIST = ["EncounterCards", "PlayerCards", "Tarot"]
     BACK_SUFFIX = "-back"
+
+    # Enforced card sizes
+    CARD_SIZES = {
+        "Regular": (750, 1050),
+        "Mini": (512, 786),
+        "Tarot": (800, 1400),
+    }
 
     # Specific backs
     BACK_URLS = {
@@ -331,6 +339,8 @@ class TTSBundleProcessor:
                     # Cycle Name logic (use folder if possible, fallback to ID prefix)
                     if arkham_id.startswith("TAR"):
                         cycle_name = "TAR"  # RtTCU Tarot handling
+                    elif arkham_id.startswith("HC"):
+                        cycle_name = "CMC"  # TSK CMC handling
                     elif folder_cycle_name:
                         cycle_name = folder_cycle_name
                     else:
@@ -562,7 +572,17 @@ class TTSBundleProcessor:
     def ensure_temp_path(self):
         # Setup Temp Directory
         if os.path.exists(self.temp_path):
-            shutil.rmtree(self.temp_path)
+            # Show a confirmation popup
+            confirm = messagebox.askyesno(
+                title="Warning: Temp Folder Exists",
+                message=f"The temp directory already exists:\n{self.temp_path}\n\nTo continue, it will get reset.\nContinue?",
+            )
+
+            if confirm:
+                shutil.rmtree(self.temp_path)
+            else:
+                raise SystemExit("User cancelled folder overwrite.")
+
         os.makedirs(self.temp_path)
 
     def handle_local_backs(self):
@@ -571,7 +591,6 @@ class TTSBundleProcessor:
         # Maybe load local versions of special card backs
         self.local_backs_path = os.path.join(self.cfg["source_folder"], "Backs")
 
-        # Handle Local Back Overrides
         if not os.path.exists(self.local_backs_path):
             return
 
@@ -589,10 +608,43 @@ class TTSBundleProcessor:
                 print(f"[INFO]     Local back found: {key} -> {local_path}")
                 online_name = f"Back_{self.cfg['locale'].upper()}_{key}"
 
-                if self.cfg["dont_upload"]:
-                    # Copy the back to the temp folder
-                    dest_path = os.path.join(self.temp_path, f"{online_name}{ext}")
-                    shutil.copy2(local_path, dest_path)
+                # Determine target dimensions based on the key
+                if key == "Tarot":
+                    target_w, target_h = self.CARD_SIZES["Tarot"]
+                elif key == "Concealed":
+                    target_w, target_h = self.CARD_SIZES["Mini"]
+                else:
+                    target_w, target_h = self.CARD_SIZES["Regular"]
+
+                # Determine destination
+                dest_path = os.path.join(self.temp_path, f"{online_name}{ext}")
+                image_resized = False
+
+                # Check dimensions and resize if necessary
+                try:
+                    with Image.open(local_path) as img:
+                        if img.size != (target_w, target_h):
+                            print(
+                                f"[RESIZING] {key} from {img.size} to {(target_w, target_h)}"
+                            )
+                            # Resize without forcing aspect ratio
+                            resized_img = img.resize(
+                                (target_w, target_h), Image.Resampling.LANCZOS
+                            )
+
+                            # Create a temporary file path to store the resized image for uploading/copying
+                            resized_img.save(dest_path)
+                            image_resized = True
+
+                except Exception as e:
+                    print(f"[ERROR]   Failed to process/resize image {key}: {e}")
+
+                # Handle the uploading or copying logic
+                if not self.cfg["upload"]:
+                    if not image_resized:
+                        # If resizing was skipped, copy the original file over
+                        shutil.copy2(local_path, dest_path)
+
                     print(f"[INFO]     Copied local back to temp: {dest_path}")
                     self.BACK_URLS[key] = "file:///" + dest_path
                 else:
@@ -602,9 +654,14 @@ class TTSBundleProcessor:
                         self.BACK_URLS[key] = existing_url
                     else:
                         print(f"[UPLOADING] {online_name}...")
-                        self.BACK_URLS[key] = self.upload_to_cloud(
-                            online_name, local_path
-                        )
+                        if image_resized:
+                            self.BACK_URLS[key] = self.upload_to_cloud(
+                                online_name, dest_path
+                            )
+                        else:
+                            self.BACK_URLS[key] = self.upload_to_cloud(
+                                online_name, local_path
+                            )
                 break  # Found the file, move to next key
 
     def process_images(self):
@@ -616,11 +673,15 @@ class TTSBundleProcessor:
         # Process Card Sheets
         for d_id, data in self.sheet_parameters.items():
             # Dimensions
-            img_w, img_h = 750, 1050
+            img_w, img_h = self.CARD_SIZES["Regular"]
 
             # RtTCU Tarot handling
             if data["back_url"] == self.BACK_URLS["Tarot"]:
-                img_w, img_h = 800, 1400
+                img_w, img_h = self.CARD_SIZES["Tarot"]
+
+            # TSK Concealed Minicard handling
+            if data["back_url"] == self.BACK_URLS["Concealed"]:
+                img_w, img_h = self.CARD_SIZES["Mini"]
 
             if d_id > self.cfg["max_sheet_count"]:
                 self.sheet_count_reached = True
@@ -632,7 +693,7 @@ class TTSBundleProcessor:
             online_name = f"Sheet_{self.cfg['locale'].upper()}_{data['start_id']}_{data['end_id']}"
 
             # Check Cloudinary First to skip redundant processing
-            if not self.cfg["dont_upload"]:
+            if self.cfg["upload"]:
                 existing_url = self.check_online_exists(online_name)
                 if existing_url:
                     print(f"[SKIPPING] {online_name} (Already Online)")
@@ -662,12 +723,12 @@ class TTSBundleProcessor:
             out_path = os.path.join(self.temp_path, f"{online_name}.webp")
             self.save_with_retry(sheet_img, out_path)
 
-            # Upload Sheet
-            if self.cfg["dont_upload"]:
-                data["uploaded_url"] = "file:///" + out_path
-            else:
+            # Maybe upload sheet
+            if self.cfg["upload"]:
                 print(f"[UPLOADING] {online_name}...")
                 data["uploaded_url"] = self.upload_to_cloud(online_name, out_path)
+            else:
+                data["uploaded_url"] = "file:///" + out_path
 
     def save_with_retry(self, image, path):
         # 6 is "best/slowest", 4 is "balanced", 0 is "fastest".
@@ -680,15 +741,13 @@ class TTSBundleProcessor:
         quality = self.cfg["img_quality"]
         while True:
             image.save(path, format="WebP", quality=quality, method=webp_method)
-            file_size = os.path.getsize(path)
-            if file_size < self.cfg["img_max_byte"] or quality <= 50:
-                print(
-                    f"[SAVED]    {name} at {quality}% quality ({file_size // 1024} KB)"
-                )
+            file_size = os.path.getsize(path) // 1024
+            if file_size < self.cfg["img_max_kb"] or quality <= 50:
+                print(f"[SAVED]    {name} at {quality}% quality ({file_size} KB)")
                 break
 
             # Adaptive quality drop: if we're way over, drop by 10, else 5
-            drop = 10 if file_size > (self.cfg["img_max_byte"] * 1.5) else 5
+            drop = 10 if file_size > (self.cfg["img_max_kb"] * 1.5) else 5
             quality -= drop
 
     def check_online_exists(self, name):
@@ -849,10 +908,6 @@ class TTSBundleProcessor:
         )
         print(f"Export complete: {out_name}")
 
-    def cleanup(self):
-        if not self.cfg.get("keep_temp_folder") and os.path.exists(self.temp_path):
-            shutil.rmtree(self.temp_path)
-
 
 # --- Execution ---
 if __name__ == "__main__":
@@ -862,10 +917,9 @@ if __name__ == "__main__":
     proc = TTSBundleProcessor(config)
     proc.load_translation_data()
     proc.load_english_data()
-    proc.scan_source()
-    proc.organize_sheets()
     proc.ensure_temp_path()
     proc.handle_local_backs()
+    proc.scan_source()
+    proc.organize_sheets()
     proc.process_images()
     proc.build_tts_json()
-    proc.cleanup()

@@ -8,13 +8,33 @@ import sys
 class App:
     def __init__(self):
         """Initializes the UI by creating the elements"""
-        self.cfg = {}
+
+        # Define absolute path for config file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(script_dir)
+        self.config_path = os.path.join(parent_dir, "config.json")
+
+        self.DEFAULTS = {
+            "img_max_kb": 20_480,
+            "cloud_name": "-",
+            "api_key": "-",
+            "api_secret": "-",
+            "locale": "en",
+            "max_sheet_count": 999,
+            "output_folder": self.generate_default_output_path(),
+            "source_folder": "",
+            "upload": False,
+            "img_count_per_sheet": 30,
+            "img_quality": 90,
+            "img_contrast": 100,
+        }
+
         self.root = tk.Tk()
         self.root.protocol("WM_DELETE_WINDOW", self.close_app)
 
         # definition of input fields, labels and expected type
         self.fields = [
-            ("Max Filesize per Sheet [Byte]", "img_max_byte", int),
+            ("Max Filesize per Sheet [KB]", "img_max_kb", int),
             ("Cloud Name", "cloud_name", str),
             ("API Key", "api_key", str),
             ("API Secret", "api_secret", str),
@@ -85,32 +105,25 @@ class App:
         )
 
         self.contrast_reset_button = ttk.Button(
-            self.root, text="Reset Contrast", command=self.reset_contrast
+            text="Reset Contrast", command=self.reset_contrast
         )
         self.contrast_reset_button.grid(row=field_count + 5, column=2, padx=10, pady=5)
 
-        # Row + 5: Do Not Upload
-        ttk.Label(self.root, text="Do not upload sheets to cloud").grid(
+        # Row + 5: Upload Sheets
+        ttk.Label(text="Upload Sheets to Cloud").grid(
             row=field_count + 5, column=0, padx=10, sticky=tk.E
         )
-        self.dont_upload_var = tk.BooleanVar(value=True)
-        self.dont_upload = tk.Checkbutton(variable=self.dont_upload_var).grid(
+        self.upload_var = tk.BooleanVar(value=False)
+        self.upload = tk.Checkbutton(variable=self.upload_var).grid(
             row=field_count + 5, column=1, padx=10, sticky=tk.W
         )
 
-        # Row + 6: Keep Temp Folder
-        ttk.Label(self.root, text="Keep temp folder with cardsheets").grid(
-            row=field_count + 6, column=0, padx=10, sticky=tk.E
-        )
-        self.keep_temp_folder_var = tk.BooleanVar(value=True)
-        self.keep_temp_folder = tk.Checkbutton(variable=self.keep_temp_folder_var).grid(
-            row=field_count + 6, column=1, padx=10, sticky=tk.W
-        )
+        # Row + 6: Submit button
+        self.submit_button = ttk.Button(text="Submit", command=self.submit)
+        self.submit_button.grid(row=field_count + 6, columnspan=3, pady=10)
 
-        # Row + 7: Submit button
-        self.submit_button = ttk.Button(self.root, text="Submit", command=self.submit)
-        self.submit_button.grid(row=field_count + 7, columnspan=3, pady=10)
-
+        # Start with a copy of the default settings
+        self.cfg = self.DEFAULTS.copy()
         self.load_settings()
         self.start_app()
 
@@ -138,19 +151,19 @@ class App:
 
     def close_app(self):
         """Run when the window is closed"""
-        exit()
+        self.root.destroy()
+        sys.exit()
 
     def load_settings(self):
         """Loads settings from the config file"""
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(script_dir)
-        config_path = os.path.join(parent_dir, "config.json")
 
-        if not os.path.exists(config_path):
-            return
-
-        with open(config_path, "r") as f:
-            self.cfg.update(json.load(f))
+        # Attempt to read and update self.cfg if the file actually exists
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r") as f:
+                    self.cfg.update(json.load(f))
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Error loading config file, using defaults: {e}")
 
         for _, var_name, expected_type in self.fields:
             value = self.cfg.get(var_name, "")
@@ -161,27 +174,22 @@ class App:
 
             self.entries[var_name].insert(0, value)
 
-        # load settings for source folder
-        self.source_folder_entry.insert(0, self.cfg.get("source_folder", ""))
-
-        # load settings for output folder
-        self.output_folder_entry.insert(
-            0, self.cfg.get("output_folder", self.generate_default_output_path())
-        )
+        # load settings for folders
+        self.source_folder_entry.insert(0, self.cfg["source_folder"])
+        self.output_folder_entry.insert(0, self.cfg["output_folder"])
 
         # load settings for checkboxes
-        self.keep_temp_folder_var.set(self.cfg.get("keep_temp_folder", True))
-        self.dont_upload_var.set(self.cfg.get("dont_upload", True))
+        self.upload_var.set(self.cfg["upload"])
 
         # load settings for sliders and labels
-        self.count_per_sheet_slider.set(self.cfg.get("img_count_per_sheet", 30))
-        self.update_label(
-            self.count_per_sheet_label, self.cfg.get("img_count_per_sheet", 30), 10
-        )
-        self.quality_slider.set(self.cfg.get("img_quality", 90))
-        self.update_label(self.quality_label, self.cfg.get("img_quality", 90))
-        self.contrast_slider.set(self.cfg.get("img_contrast", 100))
-        self.update_label(self.contrast_label, self.cfg.get("img_contrast", 100))
+        self.count_per_sheet_slider.set(self.cfg["img_count_per_sheet"])
+        self.update_label(self.count_per_sheet_label, self.cfg["img_count_per_sheet"])
+
+        self.quality_slider.set(self.cfg["img_quality"])
+        self.update_label(self.quality_label, self.cfg["img_quality"])
+
+        self.contrast_slider.set(self.cfg["img_contrast"])
+        self.update_label(self.contrast_label, self.cfg["img_contrast"])
 
     def submit(self):
         """Reads the form and saves settings to config file before continuing"""
@@ -203,12 +211,12 @@ class App:
                     )
 
             # get paths
-            self.cfg["source_folder"] = self.source_folder_entry.get()
+            self.cfg["source_folder"] = self.source_folder_entry.get().strip()
             if not os.path.exists(self.cfg["source_folder"]) or not os.path.isdir(
                 self.cfg["source_folder"]
             ):
                 raise ValueError("Source folder does not exist.")
-            self.cfg["output_folder"] = self.output_folder_entry.get()
+            self.cfg["output_folder"] = self.output_folder_entry.get().strip()
             if not os.path.exists(self.cfg["output_folder"]) or not os.path.isdir(
                 self.cfg["output_folder"]
             ):
@@ -222,11 +230,10 @@ class App:
             self.cfg["img_contrast"] = int(self.contrast_slider.get())
 
             # get values from checkboxes
-            self.cfg["keep_temp_folder"] = bool(self.keep_temp_folder_var.get())
-            self.cfg["dont_upload"] = bool(self.dont_upload_var.get())
+            self.cfg["upload"] = bool(self.upload_var.get())
 
             # save settings
-            with open("config.json", "w") as f:
+            with open(self.config_path, "w") as f:
                 json.dump(self.cfg, f, indent=4)
 
             # quit the GUI and continue with the main script
